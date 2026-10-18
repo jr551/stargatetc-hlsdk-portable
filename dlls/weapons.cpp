@@ -1291,8 +1291,15 @@ void CWeaponBox::Kill( void )
 
 		while( pWeapon )
 		{
-			pWeapon->SetThink( &CBaseEntity::SUB_Remove );
-			pWeapon->pev->nextthink = gpGlobals->time + 0.1f;
+			// Guard: a packed item may have been created but never spawned
+			// (pev == NULL) — seen as a NULL->pev->nextthink SIGSEGV at +0x104
+			// on a round/ground-weapon strip. Skip the dead item's pev write,
+			// still advance the linked list so remaining items are removed.
+			if( pWeapon->pev )
+			{
+				pWeapon->SetThink( &CBaseEntity::SUB_Remove );
+				pWeapon->pev->nextthink = gpGlobals->time + 0.1f;
+			}
 			pWeapon = pWeapon->m_pNext;
 		}
 	}

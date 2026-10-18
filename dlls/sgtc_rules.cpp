@@ -667,11 +667,15 @@ void CStargateTeamCP::InitHUD( CBasePlayer *pPlayer )
 	// SetHudRoundTime(0,0), per-player TeamInfo, self ScoreInfo, portrait
 	// fan-out, StartDeathCam + mode-check when unfocused, menu delay +3s.
 	pPlayer->m_bSgtcPad3e3 = 0;			// ref +0x3e3
+	// Connect-observer latch reset: ClientPutInServer->Spawn() leaves one
+	// DEAD_NO (alive) frame before InitHUD->StartDeathCam flips to observer,
+	// and PlayerThink latches m_bSgtcRoundAlive=1 (+0x3e4) off it. That
+	// permanently suppresses the menu-11 dead-tick emit (PlayerThink gate
+	// `m_bSgtcRoundAlive != 1`). The ref connect is a pure observer (no alive
+	// frame), so the latch must be cleared here — a fresh connect was never
+	// alive this round.
+	pPlayer->m_bSgtcRoundAlive = 0;	// ref +0x3e4 seen-alive latch
 	pPlayer->m_iSgtcPortraitShown = 1;	// ref +0xa40
-	pPlayer->m_iSgtcPortraitSel = 0;	// ref +0xa44
-	pPlayer->m_iSgtcTeam = 0;			// ref +0x438
-	pPlayer->m_iSgtcEnvStage = 0;		// ref +0xc90
-	pPlayer->m_szTeamName[0] = '\0';	// ref +0xe08 strncpy
 	CHalfLifeMultiplay::InitHUD( pPlayer );
 
 	MESSAGE_BEGIN( MSG_ONE, gmsgTeamNames, NULL, pPlayer->edict() );
