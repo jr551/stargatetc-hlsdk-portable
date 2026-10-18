@@ -113,21 +113,17 @@ static void SgtcPanels_ShowMenu( CMenuPanel *pNewMenu, int iMenu )
 		return;
 	}
 
-	for ( CMenuPanel *pMenu = gViewPort->m_pCurrentMenu; pMenu; pMenu = pMenu->GetNextMenu() )
-	{
-		if ( pMenu->GetMenuID() == iMenu )
-			return;
-	}
-
+	// These screens are exclusive in the ref — a new menu replaces the current
+	// one rather than chaining behind it. Hide every sibling SGTC panel first:
+	// a prior panel orphaned from the current-menu chain (a stock VGUIMenu that
+	// stole m_pCurrentMenu, or a GetNextMenu leftover) would keep painting under
+	// the new one forever since nothing Close()s it. Then close whatever the
+	// stock chain still thinks is current and install the new menu.
+	SgtcPanels_HideAll();
 	if ( gViewPort->m_pCurrentMenu )
-	{
-		gViewPort->m_pCurrentMenu->SetNextMenu( pNewMenu );
-	}
-	else
-	{
-		gViewPort->SetCurrentMenu( pNewMenu );	// sets m_pCurrentMenu + Open()
-		gViewPort->UpdateCursorState();
-	}
+		gViewPort->m_pCurrentMenu->Close();
+	gViewPort->SetCurrentMenu( pNewMenu );	// sets m_pCurrentMenu + Open()
+	gViewPort->UpdateCursorState();
 }
 
 //============================================================================
@@ -1822,6 +1818,20 @@ static CSgtcTeamClassPanel *s_pTeamClassPanel = NULL;
 static CSgtcWeaponSelPanel *s_pWeaponSelPanel = NULL;
 static CSgtcPackSelPanel *s_pPackSelPanel = NULL;
 static TeamFortressViewport *s_pPanelOwner = NULL;
+
+// Force-hide every SGTC menu singleton. Panels are exclusive in the ref (one
+// menu on screen at a time); if an instance ever gets orphaned — e.g. the
+// engine swapped gViewPort mid-session and a singleton was recreated, leaving
+// the first still parented+visible on the dead viewport — it would ghost
+// forever since nothing is a current menu for it. Called before a new menu
+// shows and when the server drops VGUI.
+void SgtcPanels_HideAll( void )
+{
+	if ( s_pBriefingPanel )	s_pBriefingPanel->setVisible( false );
+	if ( s_pTeamClassPanel )	s_pTeamClassPanel->setVisible( false );
+	if ( s_pWeaponSelPanel )	s_pWeaponSelPanel->setVisible( false );
+	if ( s_pPackSelPanel )	s_pPackSelPanel->setVisible( false );
+}
 
 // True while any SGTC VGUI menu is on screen — the client-side cursor gate in
 // TeamFortressViewport::UpdateCursorState uses this so the SDL cursor stays

@@ -120,6 +120,12 @@ CMenuPanel *SgtcPackSel_ShowPanel( void );		// VGUIMenu 60
 // button self-close that leaves the panel shown until the next server msg).
 bool SgtcPanels_AnyMenuVisible( void );
 
+// Force-hide every SGTC menu singleton regardless of m_pCurrentMenu state.
+// Menus are exclusive in the ref; a panel orphaned from the current-menu chain
+// (e.g. a stock VGUIMenu stole m_pCurrentMenu while a briefing was up) would
+// otherwise paint forever because nothing ever Close()s it.
+void SgtcPanels_HideAll( void );
+
 // --- weapon-selection economy state (ref client.dll globals) ----------------
 // The server feeds the menu-12 economy through two usermessages:
 //   TeamNames  : BYTE num_teams + STRING names + 28 BYTE costs  → DAT_100dd974

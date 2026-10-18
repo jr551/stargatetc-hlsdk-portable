@@ -1566,6 +1566,13 @@ void TeamFortressViewport::HideTopMenu()
 
 		// Bring up the next one
 		gViewPort->SetCurrentMenu( m_pCurrentMenu->GetNextMenu() );
+
+		// freevgui: setVisible(false) doesn't invalidate the region, so a
+		// closed menu leaves its pixels painted until something overlaps it.
+		// When the chain ends (no next menu), repaint the surface root so the
+		// closed panel's area is re-blitted with the game frame.
+		if( !m_pCurrentMenu )
+			repaintAll();
 	}
 
 	UpdateCursorState();

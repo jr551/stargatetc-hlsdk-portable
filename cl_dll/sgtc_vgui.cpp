@@ -84,6 +84,9 @@ static bool SgtcVgui_RouteToViewport( int menu )
 
 	if ( SgtcVgui_IsStockMenu( menu ) )
 	{
+		// A stock menu (MOTD/team/class/briefing) is replacing whatever SGTC
+		// panel was up — drop every SGTC singleton so none ghost underneath.
+		SgtcPanels_HideAll();
 		gViewPort->ShowVGUIMenu( menu );
 		return true;
 	}
@@ -220,6 +223,9 @@ void CSgtcViewport::HideVGUIMenu()
 	// panels hosted above (the server sends HideVGUI on round restart).
 	if ( gViewPort )
 		gViewPort->HideVGUIMenu();
+	// Drop every SGTC singleton too — an orphaned instance not in the current
+	// chain survives HideVGUIMenu otherwise.
+	SgtcPanels_HideAll();
 #endif
 	m_iCurrentMenu = SGTC_MENU_DEFAULT;
 }
