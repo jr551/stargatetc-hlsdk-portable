@@ -3101,8 +3101,10 @@ IMPLEMENT_SAVERESTORE( CCapInfo, CPointEntity );
 
 void CCapInfo::Spawn( void )
 {
-	// FGD "Capzone Settings": type (win) + m_team (condition).
-	pev->solid = SOLID_NOT;
+	// ref CCapInfo::Spawn @0x19576a: CBaseEntity::Think() (vtable call only,
+	// no body) + pev->nextthink = gpGlobals->time + 0.1. No solid write.
+	Think();
+	pev->nextthink = gpGlobals->time + 0.1f;
 }
 
 void CCapInfo::KeyValue( KeyValueData *pkvd )

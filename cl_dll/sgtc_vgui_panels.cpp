@@ -691,6 +691,35 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 			YRES( 42 ) + ( YRES( 304 ) - iPh ) / 2 );
 	}
 
+	// Footer panel (ref +0x17c info/equipe.txt, fallback literal).
+	// Ref ctor asm @0x1002cd1f builds it as TextPanel(0, 0, X(640)-2*X(21),
+	// Y(0x10097f74=76)+Y(10)) and parents it to the container at panel+0x144,
+	// which the port does not have — with `this` as the parent the ref (0,0)
+	// origin lands on the title, so the size is taken from the ref and the
+	// origin kept at the previously verified bottom-of-panel position.
+	//
+	// It is created BEFORE the interactive buttons: freevgui's
+	// isWithinTraverse walks children in reverse order (last child gets the
+	// first hit), and this transparent full-width footer overlaps the whole
+	// bottom button strip — created last it swallowed every team/Annuler/
+	// AutoAssign/Spectateur click. Keeping it before the buttons puts it
+	// behind them in both traversal and paint order.
+	m_pFooter = new TextPanel( "", XRES( 40 ), ScreenHeight - YRES( 104 ),
+		ScreenWidth - 2 * XRES( 21 ), YRES( 76 ) + YRES( 10 ) );
+	m_pFooter->setParent( this );
+	m_pFooter->setFont( pSchemes->getFont( hBriefingText ) );
+	pSchemes->getFgColor( hBriefingText, r, g, b, a );
+	m_pFooter->setFgColor( r, g, b, a );
+	pSchemes->getBgColor( hBriefingText, r, g, b, a );
+	m_pFooter->setBgColor( r, g, b, a );
+	m_pFooter->setText( "Stargate TC , B.I.G. & Endolaylith" );
+
+	pfile = SgtcPanels_LoadFile( "info/equipe.txt" );
+	if ( pfile )
+	{
+		m_pFooter->setText( pfile );
+		gEngfuncs.COM_FreeFile( pfile );
+	}
 	// Team buttons (ref +0xd4 Torri / +0xd8 Goauld, localised "#Torri"/"#Goauld")
 	// with the jointeam ids our server accepts (1 = Torri, 2 = Goauld).
 	for ( int iTeam = 0; iTeam < SGTC_TEAMCLASS_TEAMS; iTeam++ )
@@ -723,29 +752,6 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		XRES( 512 ), ScreenHeight - YRES( 56 ), XRES( 100 ), BUTTON_SIZE_Y );
 	m_pSpecButton->setParent( this );
 	m_pSpecButton->addActionSignal( new CMenuHandler_StringCommand( "spectate", 1 ) );
-
-	// Footer panel (ref +0x17c info/equipe.txt, fallback literal).
-	// Ref ctor asm @0x1002cd1f builds it as TextPanel(0, 0, X(640)-2*X(21),
-	// Y(0x10097f74=76)+Y(10)) and parents it to the container at panel+0x144,
-	// which the port does not have — with `this` as the parent the ref (0,0)
-	// origin lands on the title, so the size is taken from the ref and the
-	// origin kept at the previously verified bottom-of-panel position.
-	m_pFooter = new TextPanel( "", XRES( 40 ), ScreenHeight - YRES( 104 ),
-		ScreenWidth - 2 * XRES( 21 ), YRES( 76 ) + YRES( 10 ) );
-	m_pFooter->setParent( this );
-	m_pFooter->setFont( pSchemes->getFont( hBriefingText ) );
-	pSchemes->getFgColor( hBriefingText, r, g, b, a );
-	m_pFooter->setFgColor( r, g, b, a );
-	pSchemes->getBgColor( hBriefingText, r, g, b, a );
-	m_pFooter->setBgColor( r, g, b, a );
-	m_pFooter->setText( "Stargate TC , B.I.G. & Endolaylith" );
-
-	pfile = SgtcPanels_LoadFile( "info/equipe.txt" );
-	if ( pfile )
-	{
-		m_pFooter->setText( pfile );
-		gEngfuncs.COM_FreeFile( pfile );
-	}
 
 	Reset();
 }
@@ -1816,6 +1822,19 @@ static CSgtcTeamClassPanel *s_pTeamClassPanel = NULL;
 static CSgtcWeaponSelPanel *s_pWeaponSelPanel = NULL;
 static CSgtcPackSelPanel *s_pPackSelPanel = NULL;
 static TeamFortressViewport *s_pPanelOwner = NULL;
+
+// True while any SGTC VGUI menu is on screen — the client-side cursor gate in
+// TeamFortressViewport::UpdateCursorState uses this so the SDL cursor stays
+// ungrabbed (and clicks keep resolving) for the whole menu lifetime, including
+// when a button's HIDE_TEXTWINDOW closes m_pCurrentMenu but the SGTC panel is
+// still up as a CSgtcViewport child.
+bool SgtcPanels_AnyMenuVisible( void )
+{
+	return ( s_pBriefingPanel && s_pBriefingPanel->isVisible() ) ||
+	       ( s_pTeamClassPanel && s_pTeamClassPanel->isVisible() ) ||
+	       ( s_pWeaponSelPanel && s_pWeaponSelPanel->isVisible() ) ||
+	       ( s_pPackSelPanel && s_pPackSelPanel->isVisible() );
+}
 
 // Panels are children of gViewPort and die with it; drop a stale cache if the
 // engine ever hands out a new viewport instance.

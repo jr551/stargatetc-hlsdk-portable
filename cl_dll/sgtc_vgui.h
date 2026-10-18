@@ -114,6 +114,12 @@ CMenuPanel *SgtcTeamClass_ShowPanel( void );		// VGUIMenu 11
 CMenuPanel *SgtcWeaponSel_ShowPanel( void );		// VGUIMenu 12
 CMenuPanel *SgtcPackSel_ShowPanel( void );		// VGUIMenu 60
 
+// True while any SGTC VGUI menu panel is on screen. Lets the cursor-gate in
+// TeamFortressViewport::UpdateCursorState keep the mouse ungrabbed for SGTC
+// menus even when gViewPort->m_pCurrentMenu is already NULL (e.g. after a
+// button self-close that leaves the panel shown until the next server msg).
+bool SgtcPanels_AnyMenuVisible( void );
+
 // --- weapon-selection economy state (ref client.dll globals) ----------------
 // The server feeds the menu-12 economy through two usermessages:
 //   TeamNames  : BYTE num_teams + STRING names + 28 BYTE costs  → DAT_100dd974

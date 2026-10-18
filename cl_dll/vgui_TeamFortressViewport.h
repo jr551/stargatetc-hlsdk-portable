@@ -482,6 +482,7 @@ public:
 };
 
 //==============================================================================
+
 class TeamFortressViewport : public Panel
 {
 private:

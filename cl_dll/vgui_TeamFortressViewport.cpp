@@ -21,6 +21,15 @@
 #include <VGUI_InputSignal.h>
 #include <VGUI_Scheme.h>
 #include <VGUI_App.h>
+#include <VGUI_SurfaceBase.h>
+#include "../engine/cursor_type.h"
+// FWGS freevgui: cursorOverride is only consulted on a focus change, and with
+// SDL grabbed the engine reports a constant centre position, so focus can never
+// change. SGTC_VGuiSetCursor calls the engine's CursorSelect directly — that
+// ungrabs SDL, restores the real pointer, lets VGui_MouseMove deliver real
+// coordinates. Implemented in vgui_cursor.cpp to keep vgui_api.h's MOUSE_LEFT
+// enum out of this TU.
+extern void SGTC_VGuiSetCursor( VGUI_DefaultCursor cursor );
 
 #include "hud.h"
 #include "cl_util.h"
@@ -33,6 +42,7 @@
 #include "in_defs.h"
 #include "parsemsg.h"
 #include "pm_shared.h"
+#include "sgtc_vgui.h"
 #include "keydefs.h"
 #include "demo.h"
 #include "demo_api.h"
@@ -1652,12 +1662,22 @@ void TeamFortressViewport::UpdateOnPlayerInfo()
 
 void TeamFortressViewport::UpdateCursorState()
 {
-	// Need cursor if any VGUI window is up
-	if( m_pSpectatorPanel->m_menuVisible || m_pCurrentMenu || m_pTeamMenu->isVisible() || GetClientVoiceMgr()->IsInSquelchMode() )
+	// Need cursor if any VGUI window is up — including the SGTC panels hosted on
+	// CSgtcViewport. Their open state is m_pCurrentMenu here (SetCurrentMenu),
+	// but after a button's HIDE_TEXTWINDOW self-close the panel can stay shown
+	// one frame while m_pCurrentMenu is already NULL; SgtcPanels_AnyMenuVisible
+	// keeps the SDL cursor ungrabbed (and click focus live) for that case too.
+	if( m_pSpectatorPanel->m_menuVisible || m_pCurrentMenu || m_pTeamMenu->isVisible() || SgtcPanels_AnyMenuVisible() || GetClientVoiceMgr()->IsInSquelchMode() )
 	{
 		CurrentMouseInput()->IN_SetVisibleMouse(true);
 		IgnoreNextMouseDelta();
 		App::getInstance()->setCursorOveride( App::getInstance()->getScheme()->getCursor(Scheme::scu_arrow) );
+		// FWGS freevgui: the cursorOverride above is only consulted on a focus
+		// change, and with the SDL cursor grabbed the engine reports a constant
+		// centre position, so focus can never change to break the cycle. Call
+		// the engine's CursorSelect directly — that ungrabs SDL, restores the
+		// real pointer, and lets VGui_MouseMove deliver real coordinates.
+		SGTC_VGuiSetCursor( dc_arrow );
 		return;
 	}
 	else if( m_pCurrentCommandMenu )
@@ -1668,12 +1688,15 @@ void TeamFortressViewport::UpdateCursorState()
 			CurrentMouseInput()->IN_SetVisibleMouse(true);
 			IgnoreNextMouseDelta();
 			App::getInstance()->setCursorOveride( App::getInstance()->getScheme()->getCursor(Scheme::scu_arrow) );
+			SGTC_VGuiSetCursor( dc_arrow );
 			return;
 		}
 	}
 
 	App::getInstance()->setCursorOveride( App::getInstance()->getScheme()->getCursor(Scheme::scu_none) );
 	CurrentMouseInput()->IN_SetVisibleMouse(false);
+	// Re-grab the cursor: dc_none is treated as hidden by the platform layer.
+	SGTC_VGuiSetCursor( dc_none );
 
 	// Don't reset mouse in demo playback
 	if( !gEngfuncs.pDemoAPI->IsPlayingback() )
@@ -1681,7 +1704,6 @@ void TeamFortressViewport::UpdateCursorState()
 		IN_ResetMouse();
 	}
 }
-
 void TeamFortressViewport::UpdateHighlights()
 {
 	if( m_pCurrentCommandMenu )

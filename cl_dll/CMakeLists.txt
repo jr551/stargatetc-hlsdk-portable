@@ -131,6 +131,7 @@ set (CLDLL_SOURCES
 
 list(APPEND CLDLL_SOURCES
 	vgui_int.cpp
+	vgui_cursor.cpp
 	vgui_ClassMenu.cpp
 	vgui_ConsolePanel.cpp
 	vgui_ControlConfigPanel.cpp
