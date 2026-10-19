@@ -457,17 +457,24 @@ public:
 
 	virtual void Reset( void );
 	virtual void SetActiveInfo( int iInput );	// hovered class cell (0..9)
+	virtual void paint( void );
 
 	void SetActiveTeam( int iTeam );		// hovered/selected column (0..1)
-
-private:
+	// One shared list window + header on the left (ref +0x114/+0x180). Its
+	// contents — the 5 class cells, the header text, the team info line —
+	// belong to the team last hovered/clicked (SetActiveTeam swaps them). All
+	// 10 class cells are born visible at the SAME coords; freevgui's
+	// solveTraverse skips invisible children, so the Goa'uld set is hidden
+	// inside the first paint() pass (after its first solve) instead of at
+	// ctor/Reset time — later setVisible toggles then work normally.
 	CTransparentPanel *m_pTeamWindow[SGTC_TEAMCLASS_TEAMS];
 	Label *m_pTeamHeader[SGTC_TEAMCLASS_TEAMS];
-	TextPanel *m_pTeamInfo[SGTC_TEAMCLASS_TEAMS];	// info_sg1 / info_goauld
+	TextPanel *m_pTeamInfo[SGTC_TEAMCLASS_TEAMS];
 	CommandButton *m_pClassButton[SGTC_TEAMCLASS_COUNT];
-	TextPanel *m_pClassInfo[SGTC_TEAMCLASS_COUNT];	// one visible at a time
-	Label *m_pPortrait[SGTC_TEAMCLASS_COUNT];		// ref +0x188 image labels
+	TextPanel *m_pClassInfo[SGTC_TEAMCLASS_COUNT];
+	Label *m_pPortrait[SGTC_TEAMCLASS_COUNT];
 	CommandButton *m_pTeamButton[SGTC_TEAMCLASS_TEAMS];
+	bool m_bFirstPaint;
 	CommandButton *m_pCancelButton;
 	CommandButton *m_pAutoButton;
 	CommandButton *m_pSpecButton;
@@ -506,6 +513,9 @@ private:
 	int m_iClass;
 };
 
+// Hover over a team selector box: reveal that team's class list (ref pcharNode
+// carries 10/11 for the team boxes; FUN_1002edd2 re-populates the shared list
+// on hover, before any click). InputSignal, not ActionSignal.
 class CSgtcHandler_TeamOver : public InputSignal
 {
 public:
@@ -515,7 +525,11 @@ public:
 		m_iTeam = iTeam;
 	}
 
-	void cursorEntered( Panel *panel );
+	void cursorEntered( Panel *panel )
+	{
+		if ( m_pPanel )
+			m_pPanel->SetActiveTeam( m_iTeam );
+	}
 
 	void cursorMoved( int x, int y, Panel *panel ) {}
 	void mousePressed( MouseCode code, Panel *panel ) {}
@@ -532,6 +546,31 @@ private:
 	CSgtcTeamClassPanel *m_pPanel;
 	int m_iTeam;
 };
+// Click on a team selector box: reveal its class list (the ref's team box is a
+// reveal-only control — the server 'jointeam' verb is inert; the real join is
+// the cell's "classe <class> <team>"). This is an ActionSignal (mouse click),
+// not the hover InputSignal.
+
+class CSgtcHandler_TeamSelect : public ActionSignal
+{
+public:
+	CSgtcHandler_TeamSelect( CSgtcTeamClassPanel *pPanel, int iTeam )
+	{
+		m_pPanel = pPanel;
+		m_iTeam = iTeam;
+	}
+
+	void actionPerformed( Panel *panel )
+	{
+		if ( m_pPanel )
+			m_pPanel->SetActiveTeam( m_iTeam );
+	}
+
+private:
+	CSgtcTeamClassPanel *m_pPanel;
+	int m_iTeam;
+};
+
 
 CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int y, int wide, int tall )
 	: CMenuPanel( iTrans, iRemoveMe, x, y, wide, tall )
@@ -563,49 +602,64 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	pTitle->setContentAlignment( Label::a_center );
 	pTitle->setText( "%s", "Identifiez-vous" );
 
-	// Ref column geometry (asm @0x1002c260..0x1002c4f3):
-	//   Torri window  = TextPanel(255, X(21),  Y(105), X(210), Y(241))
-	//   Goauld window = TextPanel(255, X(409), Y(105), X(210), Y(241))
-	// (constants 0x100974e8=21, 0x10097f7c=105, 0x10097f80=210, 0x10097f84=241,
-	//  0x10097f78=409)
+	// Ref column geometry (orig orig_class.png measured at 1024x768, units /
+	// 1.6): the big bordered "Tau'ri"/"Goa'uld" box at top is the TEAM BUTTON
+	// (ref +0xd4/+0xd8), a CommandButton; the tall bordered box below is the
+	// team list window (ref +0x114/+0x118) that holds the class cells and is
+	// hidden until the team is hovered.
+	//   team button box = CommandButton(X(127)+i*X(282), Y(42), X(105), Y(40))
+	//   list window     = TextPanel(255, X(21)/X(409), Y(105), X(210), Y(241))
 	const int iWindowWide = XRES( 210 );
 	const int iWindowTall = YRES( 241 );
-	const int iClassWide = XRES( 48 );
+	const int iClassWide = XRES( 120 );	// cells are full-width buttons
+	const int iClassTall = YRES( 26 );
 	char *pfile = NULL;
 
-	// Per-team columns: Torri (ref window +0x114) and Goauld (+0x118), each with
-	// its team header label, its team info panel and its 5 class cells.
+	// Team selector boxes (ref +0xd4/+0xd8) — hover OR click reveals the team.
 	for ( int iTeam = 0; iTeam < SGTC_TEAMCLASS_TEAMS; iTeam++ )
 	{
-		const int iWindowX = ( iTeam == 0 ) ? XRES( 21 ) : XRES( 409 );
+		const int iButtonX = XRES( 127 ) + iTeam * XRES( 282 );
+		m_pTeamButton[iTeam] = new CommandButton(
+			gHUD.m_TextMessage.BufferedLocaliseTextString(
+				iTeam == 0 ? "#Torri" : "#Goauld" ),
+			iButtonX, YRES( 42 ), XRES( 105 ), YRES( 40 ) );
+		m_pTeamButton[iTeam]->setParent( this );
+		m_pTeamButton[iTeam]->setContentAlignment( Label::a_center );
+		m_pTeamButton[iTeam]->addActionSignal(
+			new CSgtcHandler_TeamSelect( this, iTeam ) );
+		m_pTeamButton[iTeam]->addInputSignal(
+			new CSgtcHandler_TeamOver( this, iTeam ) );
+	}
 
-		m_pTeamWindow[iTeam] = new CTransparentPanel( 255, iWindowX, YRES( 105 ), iWindowWide, iWindowTall );
-		m_pTeamWindow[iTeam]->setParent( this );
-		m_pTeamWindow[iTeam]->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
+	// Single shared list window on the left (ref +0x114) + its header label —
+	// the header text and the cells/infos inside swap with the active team.
+	m_pTeamWindow[0] = new CTransparentPanel( 255, XRES( 21 ), YRES( 105 ),
+		iWindowWide, iWindowTall );
+	m_pTeamWindow[0]->setParent( this );
+	m_pTeamWindow[0]->setPaintEnabled( true );
+	m_pTeamWindow[0]->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
+	m_pTeamWindow[1] = NULL;
 
-		// Team header (ref +0x180 "+#Torri" / +0x184 "+#Goauld")
-		m_pTeamHeader[iTeam] = new Label( "", XRES( 6 ), YRES( 4 ) );
-		m_pTeamHeader[iTeam]->setParent( m_pTeamWindow[iTeam] );
-		m_pTeamHeader[iTeam]->setFont( pSchemes->getFont( hTitleScheme ) );
-		pSchemes->getFgColor( hTitleScheme, r, g, b, a );
-		m_pTeamHeader[iTeam]->setFgColor( r, g, b, a );
-		pSchemes->getBgColor( hTitleScheme, r, g, b, a );
-		m_pTeamHeader[iTeam]->setBgColor( r, g, b, a );
-		m_pTeamHeader[iTeam]->setText( "%s", gHUD.m_TextMessage.BufferedLocaliseTextString(
-			iTeam == 0 ? "#Torri" : "#Goauld" ) );
+	m_pTeamHeader[0] = new Label( "", XRES( 21 ) + XRES( 4 ), YRES( 105 ) + YRES( 4 ) );
+	m_pTeamHeader[0]->setParent( this );
+	m_pTeamHeader[0]->setFont( pSchemes->getFont( hTitleScheme ) );
+	pSchemes->getFgColor( hTitleScheme, r, g, b, a );
+	m_pTeamHeader[0]->setFgColor( r, g, b, a );
+	m_pTeamHeader[0]->setText( "%s", gHUD.m_TextMessage.BufferedLocaliseTextString( "#Torri" ) );
+	m_pTeamHeader[1] = NULL;
 
-		// Team info panel (ref +0x148 info/sg1.txt / +0x14c info/goauld.txt —
-		// the ref rodata holds the full paths, 0x100b43d4 / 0x100b43e4).
-		// Fallbacks are the ref's own literals.
-		m_pTeamInfo[iTeam] = new TextPanel( "", XRES( 6 ), YRES( 22 ), iWindowWide - XRES( 12 ), YRES( 64 ) );
-		m_pTeamInfo[iTeam]->setParent( m_pTeamWindow[iTeam] );
+	// Team info lines share the same slot at the list bottom; the inactive
+	// one is toggled off by SetActiveTeam. Both born visible so solveTraverse
+	// reaches them; the first paint() hides team 1's (see m_bFirstPaint).
+	for ( int iTeam = 0; iTeam < SGTC_TEAMCLASS_TEAMS; iTeam++ )
+	{
+		m_pTeamInfo[iTeam] = new TextPanel( "", XRES( 21 ) + XRES( 6 ), YRES( 105 ) + YRES( 214 ),
+			iWindowWide - XRES( 12 ), YRES( 22 ) );
+		m_pTeamInfo[iTeam]->setParent( this );
 		m_pTeamInfo[iTeam]->setFont( pSchemes->getFont( hBriefingText ) );
 		pSchemes->getFgColor( hBriefingText, r, g, b, a );
 		m_pTeamInfo[iTeam]->setFgColor( r, g, b, a );
-		pSchemes->getBgColor( hBriefingText, r, g, b, a );
-		m_pTeamInfo[iTeam]->setBgColor( r, g, b, a );
-		m_pTeamInfo[iTeam]->setText( iTeam == 0 ? "fichier sg1 absent" : "fichier goauld absent" );
-
+		m_pTeamInfo[iTeam]->setBgColor( 0, 0, 0, 0xff );
 		pfile = SgtcPanels_LoadFile( iTeam == 0 ? "info/sg1.txt" : "info/goauld.txt" );
 		if ( pfile )
 		{
@@ -614,43 +668,45 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		}
 	}
 
-	// Class cells (ref: 5 columns x 2 rows; cell (row,col) = index row*5+col).
+	// Class cells: all 10 born visible at the SAME slot inside the shared
+	// left list — freevgui's solveTraverse only descends into visible
+	// children, so they must be visible for the first solve; paint() then
+	// hides the Goa'uld set before it ever renders. SetActiveTeam toggles.
+	// iClass/5 = team (0 Torri, 1 Goauld).
 	for ( int iClass = 0; iClass < SGTC_TEAMCLASS_COUNT; iClass++ )
 	{
-		const int iTeam = iClass / SGTC_TEAMCLASS_PER_TEAM;	// row: 0 Torri, 1 Goauld
+		const int iTeam = iClass / SGTC_TEAMCLASS_PER_TEAM;	// 0 Torri, 1 Goauld
 		const int iCol = iClass % SGTC_TEAMCLASS_PER_TEAM;
 		char szCommand[MAX_COMMAND_SIZE];
 
-		// Cell button, parented to its team window (ref: buttons live in the
-		// column's window). Text is the localised "#<Class>" key.
+		const int iCellX = XRES( 21 ) + XRES( 45 );
+		const int iCellY = YRES( 105 ) + YRES( 30 ) + iCol * YRES( 40 );
 		m_pClassButton[iClass] = new CommandButton(
 			gHUD.m_TextMessage.BufferedLocaliseTextString( s_SgtcClasses[iClass].pszLabel ),
-			XRES( 6 ) + iCol * ( iClassWide + XRES( 4 ) ), YRES( 92 ),
-			iClassWide, BUTTON_SIZE_Y );
-		m_pClassButton[iClass]->setParent( m_pTeamWindow[iTeam] );
-
-		// ref signals: "classe %d" (col+1 = class slot 1..5), "jointeam %d"
-		// (row+1 = team id 1 Torri / 2 Goauld) and a close signal.
-		snprintf( szCommand, sizeof( szCommand ), "classe %d", iCol + 1 );
+			iCellX, iCellY,
+			iClassWide, iClassTall );
+		m_pClassButton[iClass]->setParent( this );
+		// ref signals: a single "classe <class> <team>" command (argv1 = class
+		// slot 1..5, argv2 = team 1 Torri / 2 Goauld — the server's inert
+		// 'jointeam' verb is not used), then close the menu.
+		snprintf( szCommand, sizeof( szCommand ), "classe %d %d",
+			iCol + 1, iTeam + 1 );
 		m_pClassButton[iClass]->addActionSignal( new CMenuHandler_StringCommand( szCommand ) );
-
-		snprintf( szCommand, sizeof( szCommand ), "jointeam %d", iTeam + 1 );
-		m_pClassButton[iClass]->addActionSignal( new CMenuHandler_StringCommand( szCommand ) );
-
 		m_pClassButton[iClass]->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
 
 		// Mouse-over shows the class blurb (ref pcharNode<1>(this, iClass)).
 		m_pClassButton[iClass]->addInputSignal( new CSgtcHandler_ClassOver( this, iClass ) );
 
-		// Per-cell info panel (ref +0x150 array), default ref text.
-		m_pClassInfo[iClass] = new TextPanel( "", XRES( 6 ), YRES( 128 ),
-			iWindowWide - XRES( 12 ), iWindowTall - YRES( 136 ) );
-		m_pClassInfo[iClass]->setParent( m_pTeamWindow[iTeam] );
+		// Per-class info/blurb; parented to the panel (not the clipped window)
+		// and placed in the center gap between the columns. Only one shows at
+		// a time (SetActiveInfo).
+		m_pClassInfo[iClass] = new TextPanel( "", XRES( 215 ), YRES( 120 ),
+			XRES( 210 ), YRES( 120 ) );
+		m_pClassInfo[iClass]->setParent( this );
 		m_pClassInfo[iClass]->setFont( pSchemes->getFont( hBriefingText ) );
 		pSchemes->getFgColor( hBriefingText, r, g, b, a );
 		m_pClassInfo[iClass]->setFgColor( r, g, b, a );
-		pSchemes->getBgColor( hBriefingText, r, g, b, a );
-		m_pClassInfo[iClass]->setBgColor( r, g, b, a );
+		m_pClassInfo[iClass]->setBgColor( 0, 0, 0, 0xff );
 		m_pClassInfo[iClass]->setVisible( false );
 
 		// Load the class blurb once; missing file keeps the ref's
@@ -716,53 +772,49 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		m_pFooter->setText( pfile );
 		gEngfuncs.COM_FreeFile( pfile );
 	}
-	// Team buttons (ref +0xd4 Torri / +0xd8 Goauld, localised "#Torri"/"#Goauld")
-	// with the jointeam ids our server accepts (1 = Torri, 2 = Goauld).
-	for ( int iTeam = 0; iTeam < SGTC_TEAMCLASS_TEAMS; iTeam++ )
-	{
-		char szCommand[32];
-		snprintf( szCommand, sizeof( szCommand ), "jointeam %d",
-			iTeam == 0 ? SGTC_SRV_TEAM_TORRI : SGTC_SRV_TEAM_GOAULD );
 
-		m_pTeamButton[iTeam] = new CommandButton(
-			gHUD.m_TextMessage.BufferedLocaliseTextString( iTeam == 0 ? "#Torri" : "#Goauld" ),
-			XRES( 40 ) + iTeam * XRES( 108 ), ScreenHeight - YRES( 56 ),
-			XRES( 100 ), BUTTON_SIZE_Y );
-		m_pTeamButton[iTeam]->setParent( this );
-		m_pTeamButton[iTeam]->addActionSignal( new CMenuHandler_StringCommandWatch( szCommand, true ) );
-		m_pTeamButton[iTeam]->addInputSignal( new CSgtcHandler_TeamOver( this, iTeam ) );
-	}
-
-	// Bottom buttons (ref +0x104 Annuler / +0x10c AutoAssign / +0x108 Spectateur)
-	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
-		XRES( 296 ), ScreenHeight - YRES( 56 ), XRES( 100 ), BUTTON_SIZE_Y );
-	m_pCancelButton->setParent( this );
-	m_pCancelButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
+	// Bottom buttons (ref +0x104 Annuler / +0x10c AutoAssign / +0x108
+	// Spectateur). Orig footer order (orig_class.png): Spectator | Auto Team |
+	// Close, evenly spaced at the bottom. y = ScreenHeight - YRES(33) so the
+	// strip sits at the panel bottom, not floating above the credits.
+	m_pSpecButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Spectateur" ),
+		XRES( 127 ), ScreenHeight - YRES( 33 ), XRES( 105 ), YRES( 28 ) );
+	m_pSpecButton->setParent( this );
+	m_pSpecButton->addActionSignal( new CMenuHandler_StringCommand( "spectate", 1 ) );
 
 	m_pAutoButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#AutoAssign" ),
-		XRES( 404 ), ScreenHeight - YRES( 56 ), XRES( 100 ), BUTTON_SIZE_Y );
+		XRES( 274 ), ScreenHeight - YRES( 33 ), XRES( 105 ), YRES( 28 ) );
 	m_pAutoButton->setParent( this );
 	m_pAutoButton->addActionSignal( new CMenuHandler_StringCommand( "autopick", 1 ) );
 
-	m_pSpecButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Spectateur" ),
-		XRES( 512 ), ScreenHeight - YRES( 56 ), XRES( 100 ), BUTTON_SIZE_Y );
-	m_pSpecButton->setParent( this );
-	m_pSpecButton->addActionSignal( new CMenuHandler_StringCommand( "spectate", 1 ) );
+	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
+		XRES( 409 ), ScreenHeight - YRES( 33 ), XRES( 105 ), YRES( 28 ) );
+	m_pCancelButton->setParent( this );
+	m_pCancelButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
 
 	Reset();
 }
 
 void CSgtcTeamClassPanel::Reset( void )
 {
-	// ref FUN_1002ed4a: no team/class selected, all cell info panels hidden.
+	// ref FUN_1002ed4a: no class selected; per-class blurbs + portraits
+	// hidden. The shared list's contents are NOT toggled here — solveTraverse
+	// skips invisible children, so hiding the Goa'uld set inside Reset() (the
+	// CMenuPanel ctor calls Reset() before setParent/attach) would strand
+	// them unsolved forever. Instead m_bFirstPaint defers the first
+	// SetActiveTeam(0) to the paint pass, which runs after the first solve.
 	CMenuPanel::Reset();
 	m_iCurrentClass = 0;
 	m_iCurrentTeam = -1;
+	m_bFirstPaint = true;
 
 	for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
+	{
 		m_pClassInfo[i]->setVisible( false );
+		m_pPortrait[i]->setVisible( false );
+	}
 
-	// ref FUN_1002edd2 also clears the armed state of every button.
+	// ref FUN_1002edd2 clears the armed state of every button.
 	for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
 		m_pClassButton[i]->setArmed( false );
 	for ( int i = 0; i < SGTC_TEAMCLASS_TEAMS; i++ )
@@ -770,14 +822,18 @@ void CSgtcTeamClassPanel::Reset( void )
 	m_pCancelButton->setArmed( false );
 	m_pAutoButton->setArmed( false );
 	m_pSpecButton->setArmed( false );
+}
 
-	// Deviation from the ref: FUN_1002edd2 hides the team window that is not
-	// selected, which also hides its 5 class cells — the ref panel therefore
-	// opens with no class grid at all until a team button is hovered. The port
-	// keeps both columns on screen (all 10 cells stay clickable) and only
-	// switches the per-class blurb.
-	for ( int i = 0; i < SGTC_TEAMCLASS_TEAMS; i++ )
-		m_pTeamWindow[i]->setVisible( true );
+// First paint pass after the children have been solved once: hide the
+// Goa'uld cells + info so the list opens on Torri (ref default). Deferred
+// from Reset() because a born-invisible freevgui child is never solved.
+void CSgtcTeamClassPanel::paint( void )
+{
+	if ( m_bFirstPaint )
+	{
+		m_bFirstPaint = false;
+		SetActiveTeam( 0 );
+	}
 }
 
 // Mouse is over a class cell: bring up its blurb and portrait (ref
@@ -797,10 +853,13 @@ void CSgtcTeamClassPanel::SetActiveInfo( int iInput )
 	}
 
 	m_pClassInfo[iInput]->setText( m_szClassInfo[iInput] );
+	if ( getSurfaceBase() )
+		repaintAll();
 }
 
-// Mouse is over a team button: clear the other column's blurb so the two info
-// areas never disagree (ref FUN_1002edd2 hides the other column entirely).
+// Team box hovered/clicked (ref FUN_1002edd2 re-populates the shared list on
+// hover): swap header text + team info, show that team's 5 class cells and
+// hide the other team's, drop its blurbs/portraits, arm its box.
 void CSgtcTeamClassPanel::SetActiveTeam( int iTeam )
 {
 	m_iCurrentTeam = iTeam;
@@ -808,11 +867,25 @@ void CSgtcTeamClassPanel::SetActiveTeam( int iTeam )
 	if ( iTeam < 0 || iTeam >= SGTC_TEAMCLASS_TEAMS )
 		return;
 
+	m_pTeamHeader[0]->setText( "%s", gHUD.m_TextMessage.BufferedLocaliseTextString(
+		iTeam == 0 ? "#Torri" : "#Goauld" ) );
+	m_pTeamInfo[0]->setVisible( iTeam == 0 );
+	m_pTeamInfo[1]->setVisible( iTeam == 1 );
+
 	for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
 	{
-		if ( i / SGTC_TEAMCLASS_PER_TEAM != iTeam )
+		const bool bSel = ( i / SGTC_TEAMCLASS_PER_TEAM == iTeam );
+		m_pClassButton[i]->setVisible( bSel );
+		if ( !bSel )
+		{
 			m_pClassInfo[i]->setVisible( false );
+			m_pPortrait[i]->setVisible( false );
+		}
 	}
+	for ( int i = 0; i < SGTC_TEAMCLASS_TEAMS; i++ )
+		m_pTeamButton[i]->setArmed( i == iTeam );
+	if ( getSurfaceBase() )
+		repaintAll();
 }
 
 void CSgtcHandler_ClassOver::cursorEntered( Panel *panel )
@@ -821,11 +894,6 @@ void CSgtcHandler_ClassOver::cursorEntered( Panel *panel )
 		m_pPanel->SetActiveInfo( m_iClass );
 }
 
-void CSgtcHandler_TeamOver::cursorEntered( Panel *panel )
-{
-	if ( m_pPanel )
-		m_pPanel->SetActiveTeam( m_iTeam );
-}
 
 
 //============================================================================
