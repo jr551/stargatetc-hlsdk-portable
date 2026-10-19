@@ -457,7 +457,7 @@ public:
 
 	virtual void Reset( void );
 	virtual void SetActiveInfo( int iInput );	// hovered class cell (0..9)
-	virtual void paint( void );
+	virtual void paintTraverse( bool repaint );
 
 	void SetActiveTeam( int iTeam );		// hovered/selected column (0..1)
 	// One shared list window + header on the left (ref +0x114/+0x180). Its
@@ -699,7 +699,9 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 
 		// Per-class info/blurb; parented to the panel (not the clipped window)
 		// and placed in the center gap between the columns. Only one shows at
-		// a time (SetActiveInfo).
+		// a time (SetActiveInfo). BORN VISIBLE — a born-invisible freevgui
+		// child is never solved, so the hide is deferred to the first
+		// paintTraverse (m_bFirstPaint), after the child's first solve.
 		m_pClassInfo[iClass] = new TextPanel( "", XRES( 215 ), YRES( 120 ),
 			XRES( 210 ), YRES( 120 ) );
 		m_pClassInfo[iClass]->setParent( this );
@@ -707,7 +709,6 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		pSchemes->getFgColor( hBriefingText, r, g, b, a );
 		m_pClassInfo[iClass]->setFgColor( r, g, b, a );
 		m_pClassInfo[iClass]->setBgColor( 0, 0, 0, 0xff );
-		m_pClassInfo[iClass]->setVisible( false );
 
 		// Load the class blurb once; missing file keeps the ref's
 		// "fichier absent %s" (with the file name substituted).
@@ -724,10 +725,11 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		}
 	}
 
-	// Class portraits (ref +0x188[10]: image-Labels created hidden with the
-	// class's gfx/vgui/<res>_<name>.tga, each centred in the 136x304 gap
-	// between the two team columns at XRES(252),YRES(42) — ctor asm
-	// @0x1002dff7..0x1002e0c1). SetActiveInfo shows one at a time.
+	// Class portraits (ref +0x188[10]: image-Labels with the class's
+	// gfx/vgui/<res>_<name>.tga, centred in the 136x304 gap at
+	// XRES(252),YRES(42) — ctor asm @0x1002dff7..0x1002e0c1). BORN VISIBLE
+	// like the blurbs: first paintTraverse hides them; born-invisible would
+	// strand them unsolved. SetActiveInfo shows one at a time.
 	for ( int iClass = 0; iClass < SGTC_TEAMCLASS_COUNT; iClass++ )
 	{
 		m_pPortrait[iClass] = new Label( "" );
@@ -735,7 +737,6 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		m_pPortrait[iClass]->setImage( LoadTGAForRes( s_SgtcClasses[iClass].pszTga ) );
 		m_pPortrait[iClass]->setPaintBackgroundEnabled( false );
 		m_pPortrait[iClass]->setParent( this );
-		m_pPortrait[iClass]->setVisible( false );
 		int iPw = 0, iPh = 0;
 		m_pPortrait[iClass]->getSize( iPw, iPh );
 		m_pPortrait[iClass]->setPos(
@@ -808,10 +809,16 @@ void CSgtcTeamClassPanel::Reset( void )
 	m_iCurrentTeam = -1;
 	m_bFirstPaint = true;
 
-	for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
+	// Blurbs/portraits: hide only once attached — a born-invisible freevgui
+	// child is never solved, so a pre-attach hide would strand them. The
+	// pre-attach case is covered by m_bFirstPaint in paintTraverse.
+	if ( getSurfaceBase() )
 	{
-		m_pClassInfo[i]->setVisible( false );
-		m_pPortrait[i]->setVisible( false );
+		for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
+		{
+			m_pClassInfo[i]->setVisible( false );
+			m_pPortrait[i]->setVisible( false );
+		}
 	}
 
 	// ref FUN_1002edd2 clears the armed state of every button.
@@ -824,16 +831,25 @@ void CSgtcTeamClassPanel::Reset( void )
 	m_pSpecButton->setArmed( false );
 }
 
-// First paint pass after the children have been solved once: hide the
-// Goa'uld cells + info so the list opens on Torri (ref default). Deferred
-// from Reset() because a born-invisible freevgui child is never solved.
-void CSgtcTeamClassPanel::paint( void )
+// First traversal after the children have been solved once: force the default
+// Torri state (hide the Goa'uld cells + info, hide every born-visible blurb
+// and portrait). Deferred from Reset() because freevgui never re-solves a
+// born-invisible child — solveTraverse skips them before the first solve.
+// paintTraverse (not paint) is the hook: it runs every frame once visible,
+// while paint() only runs when a repaint is pending.
+void CSgtcTeamClassPanel::paintTraverse( bool repaint )
 {
 	if ( m_bFirstPaint )
 	{
 		m_bFirstPaint = false;
+		for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
+		{
+			m_pClassInfo[i]->setVisible( false );
+			m_pPortrait[i]->setVisible( false );
+		}
 		SetActiveTeam( 0 );
 	}
+	Panel::paintTraverse( repaint );
 }
 
 // Mouse is over a class cell: bring up its blurb and portrait (ref
