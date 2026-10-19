@@ -831,9 +831,11 @@ void CSgtcTeamClassPanel::Reset( void )
 	m_pSpecButton->setArmed( false );
 }
 
-// First traversal after the children have been solved once: force the default
-// Torri state (hide the Goa'uld cells + info, hide every born-visible blurb
-// and portrait). Deferred from Reset() because freevgui never re-solves a
+// First traversal after the children have been solved once: force the ref's
+// initial state — the menu opens with ONLY the two team selector boxes; the
+// shared list window, header, both info lines, all 10 class cells and every
+// blurb/portrait stay hidden until the first team hover/click
+// (SetActiveTeam). Deferred from Reset() because freevgui never re-solves a
 // born-invisible child — solveTraverse skips them before the first solve.
 // paintTraverse (not paint) is the hook: it runs every frame once visible,
 // while paint() only runs when a repaint is pending.
@@ -842,12 +844,17 @@ void CSgtcTeamClassPanel::paintTraverse( bool repaint )
 	if ( m_bFirstPaint )
 	{
 		m_bFirstPaint = false;
+		m_pTeamWindow[0]->setVisible( false );
+		m_pTeamHeader[0]->setVisible( false );
+		m_pTeamInfo[0]->setVisible( false );
+		m_pTeamInfo[1]->setVisible( false );
 		for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
 		{
+			m_pClassButton[i]->setVisible( false );
 			m_pClassInfo[i]->setVisible( false );
 			m_pPortrait[i]->setVisible( false );
 		}
-		SetActiveTeam( 0 );
+		m_iCurrentTeam = -1;
 	}
 	Panel::paintTraverse( repaint );
 }
@@ -882,7 +889,10 @@ void CSgtcTeamClassPanel::SetActiveTeam( int iTeam )
 
 	if ( iTeam < 0 || iTeam >= SGTC_TEAMCLASS_TEAMS )
 		return;
-
+	// Ref FUN_1002edd2: reveal the shared list window + header + info for the
+	// activated team (they were all hidden until the first hover/click).
+	m_pTeamWindow[0]->setVisible( true );
+	m_pTeamHeader[0]->setVisible( true );
 	m_pTeamHeader[0]->setText( "%s", gHUD.m_TextMessage.BufferedLocaliseTextString(
 		iTeam == 0 ? "#Torri" : "#Goauld" ) );
 	m_pTeamInfo[0]->setVisible( iTeam == 0 );
