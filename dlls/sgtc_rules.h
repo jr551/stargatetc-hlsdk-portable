@@ -130,6 +130,7 @@ protected:
 	edict_t *SGTC_FindTeamSpawn( const char *pszClassname );
 	void SGTC_NewRoundCommon( BOOL bCaptureMode );	// shared NewRound body (sgtc_round.cpp)
 	void SGTC_ThinkPlayMusic( void );	// ref Think @0x1945b7..0x194b2b PlayMusic paths
+	void SGTC_ThinkEndtroundRollover( void );	// ref Think endtround+hasplayed tails
 
 	char m_szSGTCTeams[SGTC_MAX_SGTC_TEAMS][SGTC_TEAMNAME_LEN];
 	int m_iSGTCTeamScores[SGTC_MAX_SGTC_TEAMS];
@@ -139,6 +140,7 @@ protected:
 	int m_iSgtcModeVote;		// ref +0x770: pending mode vote (-1 none)
 	float m_flSgtcRoundTime;	// ref +0x728: round duration (s)
 	float m_flSgtcRoundEnd;		// ref +0x724: round end tick
+	int m_iSgtcRoundsOnMap;		// ref +0x730: roundspermap counter (Think rollover)
 	int m_iSgtcRoundTicks;		// ref +0x73c: Goal guard + NewRound zero (restart counter)
 	float m_flSgtcRoundTickStart;	// ref +0x744: elimination stinger arm time
 	int m_iSgtcWinPending;		// ref +0x74c: set when a lone team remains

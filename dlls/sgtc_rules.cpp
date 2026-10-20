@@ -2232,15 +2232,9 @@ void CStargateTeamDM::Think( void )
 
 	SGTC_ThinkPlayMusic();	// ref Think @0x1945b7..0x194b2b (ticket + elimination stingers)
 
-	// ref Think @0x1929ce: goal deadline (endtround + hasplayed) and the
-	// per-round member deadline (this+0x724) end the round; mp_timelimit
-	// only gates entry when no mode override holds.
-	if( sgtc_endtround != 0.0f && gpGlobals->time >= sgtc_endtround )
-	{
-		sgtc_endtround = 0.0f;
-		NewRound();
-		return;
-	}
+	// ref Think @0x1929ce: endtround+hasplayed deadline (modes 0/1/2/4) and
+	// member deadline +0x724; mp_timelimit gated separately below.
+	SGTC_ThinkEndtroundRollover();
 	if( m_flSgtcRoundEnd != 0.0f && gpGlobals->time >= m_flSgtcRoundEnd )
 	{
 		m_flSgtcRoundEnd = 0.0f;

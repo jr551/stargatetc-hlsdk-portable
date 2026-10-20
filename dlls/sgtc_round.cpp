@@ -164,6 +164,7 @@ cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };
 // ref ClientCommand 'classe' reads these cvar_t blobs live (@0x213420
 // autobalance, @0x2135d8 mp_altclasslimiter, @0x213600..0x2136b4 class caps):
 cvar_t sgtc_cvar_resetround = { "mp_resetround", "0", FCVAR_SERVER };	// ref resetround @0x21340c (Think pulse)
+cvar_t sgtc_cvar_roundspermap = { "mp_roundspermap", "2", FCVAR_SERVER };	// ref roundspermap @0x2133f8
 cvar_t sgtc_cvar_autobalance = { "mp_autobalance", "2", FCVAR_SERVER };	// ref autobalance @0x213420
 cvar_t sgtc_cvar_classlimitmodel = { "mp_altclasslimiter", "0", FCVAR_SERVER };	// ref classlimitmodel @0x2135d8
 cvar_t sgtc_cvar_max_syslord = { "max_syslord", "1", FCVAR_SERVER };	// ref @0x213650
@@ -246,6 +247,7 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_freeguns );
 	CVAR_REGISTER( &sgtc_cvar_attackcountdown );
 	CVAR_REGISTER( &sgtc_cvar_resetround );
+	CVAR_REGISTER( &sgtc_cvar_roundspermap );
 	CVAR_REGISTER( &sgtc_cvar_autobalance );
 	CVAR_REGISTER( &sgtc_cvar_classlimitmodel );
 	CVAR_REGISTER( &sgtc_cvar_max_syslord );
@@ -615,6 +617,68 @@ void CStargateTeamDM::SGTC_ThinkPlayMusic( void )
 			}
 			sgtc_hasplayed = 1;
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Think endtround rollover — ref CStargateTeamDM::Think @0x1929ce after P10
+// stingers. Requires hasplayed==1 and gpGlobals->time >= endtround.
+// vtable +0x38 = EndRound; +0x108 = GoToIntermission (fraglimit / map end).
+// ---------------------------------------------------------------------------
+void CStargateTeamDM::SGTC_ThinkEndtroundRollover( void )
+{
+	if( gpGlobals->time < sgtc_endtround || sgtc_hasplayed != 1 )
+		return;
+
+	if( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 4 )
+	{
+		sgtc_endtround = 0.0f;
+		m_iSgtcRoundsOnMap++;
+		float flRoundsPerMap = CVAR_GET_FLOAT( "mp_roundspermap" );
+		if( flRoundsPerMap - 1.0f < (float)m_iSgtcRoundsOnMap )
+		{
+			m_iSgtcRoundsOnMap = 0;
+			sgtc_G_tickets = SGTC_Round_intconstrain( 0, 99,
+				SGTC_Round_roundf( sgtc_cvar_tickets.value ) );
+			sgtc_T_tickets = sgtc_G_tickets;
+			GoToIntermission();
+		}
+		else
+		{
+			EndRound();
+		}
+		m_iSgtcRoundsOnMap = 0;
+		return;
+	}
+
+	if( sgtc_GameModeSet == 2 )
+	{
+		sgtc_endtround = 0.0f;
+		m_iSgtcRoundsOnMap++;
+		float flRoundsPerMap = CVAR_GET_FLOAT( "mp_roundspermap" );
+		if( flRoundsPerMap - 1.0f < (float)m_iSgtcRoundsOnMap )
+		{
+			m_iSgtcRoundsOnMap = 0;
+			MESSAGE_BEGIN( MSG_ALL, gmsgGtickets );
+				WRITE_BYTE( 100 );
+			MESSAGE_END();
+			MESSAGE_BEGIN( MSG_ALL, gmsgTtickets );
+				WRITE_BYTE( 100 );
+			MESSAGE_END();
+			GoToIntermission();
+		}
+		else
+		{
+			EndRound();
+		}
+		m_iSgtcRoundsOnMap = 0;
+		return;
+	}
+
+	if( sgtc_GameModeSet == 0 )
+	{
+		sgtc_endtround = 0.0f;
+		EndRound();
 	}
 }
 
@@ -1297,6 +1361,7 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	m_iSgtcWinScoreSide = 0;
 	m_flSgtcRoundTickStart = 0.0f;
 	m_iSgtcRoundTicks = 0;
+	m_iSgtcRoundsOnMap = 0;	// ref +0x730 cleared in NewRound
 	// ref: LastKeyPlace = firstplace (BSS 0x2368e0)
 	{
 		extern Vector sgtc_LastKeyPlace;
