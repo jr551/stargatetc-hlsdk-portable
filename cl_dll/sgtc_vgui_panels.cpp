@@ -75,6 +75,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <typeinfo>
 
 // ---------------------------------------------------------------------------
 // shared helpers
@@ -88,9 +89,71 @@ static char *SgtcPanels_LoadFile( const char *pszFile )
 }
 
 // Show a SGTC panel through the real viewport, the same way
-// TeamFortressViewport::ShowVGUIMenu does for the stock menus: set the id,
-// activate, parent, then either open it or queue it behind the current menu
-// (ids already queued are ignored — ref dedup).
+// TeamFortressViewport::ShowVGUIMenu does for the stock menus.
+//
+// Ref chain semantics (ShowVGUIMenu @0x10047b39 + :79 live evidence):
+//   - received menus stay chained off m_pCurrentMenu; a same-id resend is
+//     deduped over the WHOLE chain (no re-install, no re-show, no re-Reset —
+//     the 1s menu-11 resend must not re-hide the class list under the cursor
+//     nor bury a menu-10 briefing that is on top);
+//   - a new id installs BEHIND the front panel — never HideAll+Close of the
+//     visible menu (orig: menu 10 stayed up while 11s resend queued, then the
+//     queued 11 surfaced when 10 closed);
+//   - the front's own close pops it (ref dedup would block any hidden copy
+//     anyway), AND leaves a "dismissed" mark: a same-id resend after a user
+//     dismiss does NOT re-open the menu (orig: menu-11 Annuler stays closed
+//     for 60s+ under the 1s resend);
+//   - the dismissal clears the next time ANY menu front is dismissed (orig:
+//     menu-10 Ok -> the next menu-11 resend re-popped 11).
+static int s_iSgtcDismissedMenu = 0;	// SGTC menu id last closed by the user
+
+// ids the stock TeamFortressViewport owns (2..9). SGTC ids are 10/11/12/60.
+static bool SgtcPanels_IsStockMenuId( int iMenu )
+{
+	return iMenu >= SGTC_MENU_TEAM && iMenu <= SGTC_MENU_SPECHELP;
+}
+
+// True when a fresh VGUIMenu(iMenu) may install: the id is neither already in
+// the current-menu chain (ref dedup) nor the id the user just dismissed.
+static bool SgtcPanels_ShouldShow( int iMenu )
+{
+	if ( s_iSgtcDismissedMenu == iMenu )
+		return false;
+
+	for ( CMenuPanel *p = gViewPort->m_pCurrentMenu; p; p = p->GetNextMenu() )
+	{
+		if ( p->GetMenuID() == iMenu )
+			return false;
+	}
+	return true;
+}
+
+
+static bool SgtcPanels_IsOurPanel( CMenuPanel *p );	// defined near HideAll
+// The SGTC server never sends stock TFC menu ids (2..9); any such node in the
+// chain is a leftover singleton that would pop over an SGTC screen when the
+// front advances (the "stale menu-2" ghost). Drop hidden stock nodes before
+// installing an SGTC menu; a stock menu currently on top is left alone —
+// closing it legitimately reveals what is queued behind.
+static void SgtcPanels_PruneStockMenus( void )
+{
+	while ( gViewPort->m_pCurrentMenu
+		&& !gViewPort->m_pCurrentMenu->isVisible()
+		&& SgtcPanels_IsStockMenuId( gViewPort->m_pCurrentMenu->GetMenuID() ) )
+	{
+		gViewPort->m_pCurrentMenu = gViewPort->m_pCurrentMenu->GetNextMenu();
+	}
+
+	for ( CMenuPanel *p = gViewPort->m_pCurrentMenu; p && p->GetNextMenu(); )
+	{
+		CMenuPanel *pNext = p->GetNextMenu();
+		if ( !pNext->isVisible() && SgtcPanels_IsStockMenuId( pNext->GetMenuID() ) )
+			p->SetNextMenu( pNext->GetNextMenu() );
+		else
+			p = pNext;
+	}
+}
+
 static void SgtcPanels_ShowMenu( CMenuPanel *pNewMenu, int iMenu )
 {
 	if ( !pNewMenu || !gViewPort )
@@ -100,31 +163,64 @@ static void SgtcPanels_ShowMenu( CMenuPanel *pNewMenu, int iMenu )
 	if ( gEngfuncs.pDemoAPI->IsPlayingback() )
 		return;
 
+	// Same-id resend while shown/queued/dismissed: drop it entirely — no
+	// Reset, no re-install (ref chain dedup + dismissal, see above).
+	if ( !SgtcPanels_ShouldShow( iMenu ) )
+	{
+		gEngfuncs.Con_Printf( "[sgtc] ShowMenu %d dedup (dismissed=%d)\n",
+			iMenu, s_iSgtcDismissedMenu );
+		return;
+	}
+
 	gViewPort->HideCommandMenu();
+	SgtcPanels_PruneStockMenus();
+
 	pNewMenu->SetMenuID( iMenu );
 	pNewMenu->SetActive( true );
 	pNewMenu->setParent( gViewPort );
 
-	if ( gViewPort->m_pCurrentMenu == pNewMenu )
-	{
-		// Re-sent while already up: re-open (ref pre-created panels are reused).
-		pNewMenu->Open();
-		gViewPort->UpdateCursorState();
-		return;
-	}
-
-	// These screens are exclusive in the ref — a new menu replaces the current
-	// one rather than chaining behind it. Hide every sibling SGTC panel first:
-	// a prior panel orphaned from the current-menu chain (a stock VGUIMenu that
-	// stole m_pCurrentMenu, or a GetNextMenu leftover) would keep painting under
-	// the new one forever since nothing Close()s it. Then close whatever the
-	// stock chain still thinks is current and install the new menu.
-	SgtcPanels_HideAll();
 	if ( gViewPort->m_pCurrentMenu )
-		gViewPort->m_pCurrentMenu->Close();
-	gViewPort->SetCurrentMenu( pNewMenu );	// sets m_pCurrentMenu + Open()
+	{
+		// Chain behind the front panel like stock ShowVGUIMenu — the
+		// visible menu keeps focus and this one surfaces when it closes.
+		gViewPort->m_pCurrentMenu->SetNextMenu( pNewMenu );
+	}
+	else
+	{
+		gViewPort->SetCurrentMenu( pNewMenu );	// sets m_pCurrentMenu + Open()
+	}
 	gViewPort->UpdateCursorState();
+
+	gEngfuncs.Con_Printf( "[sgtc] ShowMenu %d installed%s (front id %d)\n", iMenu,
+		gViewPort->m_pCurrentMenu ? " behind" : " front",
+		gViewPort->m_pCurrentMenu ? gViewPort->m_pCurrentMenu->GetMenuID() : 0 );
 }
+
+
+// Close handler for SGTC "Annuler"/"Ok" buttons — the ref-equivalent of the
+// menu's own close. A plain HideTopMenu pop lets the server's pending-menu
+// resend (menu 11 fires every 1s for dead observers) re-open the menu
+// instantly, which is what made clicks look dead. Recording the dismissed id
+// makes SgtcPanels_ShouldShow drop same-id resends until a different menu
+// front is dismissed — matching the orig (Close stays closed under resend;
+// menu-10 Ok lets a resend re-pop 11). Deliberately NOT used on the join
+// buttons (spectate/autopick/classe): those go through
+// CMenuHandler_StringCommand/HIDE_TEXTWINDOW so a failed pick still lets the
+// resend re-open the menu for another try.
+class CSgtcHandler_DismissMenu : public ActionSignal
+{
+public:
+	virtual void actionPerformed( Panel *panel )
+	{
+		if ( gViewPort && gViewPort->m_pCurrentMenu )
+		{
+			s_iSgtcDismissedMenu = gViewPort->m_pCurrentMenu->GetMenuID();
+			gEngfuncs.Con_Printf( "[sgtc] DismissMenu id %d\n", s_iSgtcDismissedMenu );
+		}
+		if ( gViewPort )
+			gViewPort->HideTopMenu();
+	}
+};
 
 //============================================================================
 // Weapon-selection economy state — exact port of the ref client.dll globals
@@ -342,7 +438,7 @@ CSgtcBriefingPanel::CSgtcBriefingPanel( int iTrans, int iRemoveMe, int x, int y,
 	m_pOKButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Ok" ),
 		iOkX, iOkY, iOkW, iOkH );
 	m_pOKButton->setParent( this );
-	m_pOKButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
+	m_pOKButton->addActionSignal( new CSgtcHandler_DismissMenu() );
 
 	m_bBriefingLoaded = false;
 
@@ -354,6 +450,7 @@ void CSgtcBriefingPanel::Open( void )
 	Refresh();
 	CMenuPanel::Open();
 }
+
 
 void CSgtcBriefingPanel::Reset( void )
 {
@@ -793,7 +890,7 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
 		XRES( 409 ), ScreenHeight - YRES( 33 ), XRES( 105 ), YRES( 28 ) );
 	m_pCancelButton->setParent( this );
-	m_pCancelButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
+	m_pCancelButton->addActionSignal( new CSgtcHandler_DismissMenu() );
 
 	Reset();
 }
@@ -875,10 +972,13 @@ void CSgtcTeamClassPanel::paintTraverse( bool repaint )
 				i / SGTC_TEAMCLASS_PER_TEAM == m_iCurrentTeam );
 	}
 
-	Panel::paintTraverse( repaint );
+
+	CMenuPanel::paintTraverse( repaint );
 }
 
+
 // Mouse is over a class cell: bring up its blurb and portrait (ref
+
 // SetActiveInfo FUN_1002efbc: shows m_pPortrait[i] at +0x188 + i*8 + team*4).
 void CSgtcTeamClassPanel::SetActiveInfo( int iInput )
 {
@@ -1315,7 +1415,7 @@ CSgtcWeaponSelPanel::CSgtcWeaponSelPanel( int iTrans, int iRemoveMe, int x, int 
 		gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
 		0x184, ScreenHeight - 0x54, 0x98, 0x2a );
 	m_pCancelButton->setParent( this );
-	m_pCancelButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
+	m_pCancelButton->addActionSignal( new CSgtcHandler_DismissMenu() );
 
 	Reset();
 }
@@ -1785,7 +1885,7 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
 		ScreenWidth / 2 + XRES( 173 ), ScreenHeight - YRES( 84), XRES( 152 ), BUTTON_SIZE_Y );
 	m_pCancelButton->setParent( this );
-	m_pCancelButton->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
+	m_pCancelButton->addActionSignal( new CSgtcHandler_DismissMenu() );
 
 	m_pApplyButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Apply" ),
 		ScreenWidth / 2 - XRES( 173 ), ScreenHeight - YRES( 84 ), XRES( 152 ), BUTTON_SIZE_Y );
@@ -1939,25 +2039,49 @@ static CSgtcWeaponSelPanel *s_pWeaponSelPanel = NULL;
 static CSgtcPackSelPanel *s_pPackSelPanel = NULL;
 static TeamFortressViewport *s_pPanelOwner = NULL;
 
-// Force-hide every SGTC menu singleton. Panels are exclusive in the ref (one
-// menu on screen at a time); if an instance ever gets orphaned — e.g. the
-// engine swapped gViewPort mid-session and a singleton was recreated, leaving
-// the first still parented+visible on the dead viewport — it would ghost
-// forever since nothing is a current menu for it. Called before a new menu
-// shows and when the server drops VGUI.
+// True when p is one of our four singleton panels (used for chain surgery).
+static bool SgtcPanels_IsOurPanel( CMenuPanel *p )
+{
+	return p == (CMenuPanel *)s_pBriefingPanel
+		|| p == (CMenuPanel *)s_pTeamClassPanel
+		|| p == (CMenuPanel *)s_pWeaponSelPanel
+		|| p == (CMenuPanel *)s_pPackSelPanel;
+}
+
+// Force-hide every SGTC menu singleton AND take the singletons out of the
+// m_pCurrentMenu chain (server HideVGUI = close-all; a hidden node left
+// chained would still dedup the next resend via SgtcPanels_ShouldShow).
+// Called when the server drops VGUI; the dismissal mark is cleared too —
+// after HideVGUI the next menu send is a fresh install.
 void SgtcPanels_HideAll( void )
 {
+	if ( gViewPort )
+	{
+		while ( gViewPort->m_pCurrentMenu
+			&& SgtcPanels_IsOurPanel( gViewPort->m_pCurrentMenu ) )
+			gViewPort->m_pCurrentMenu = gViewPort->m_pCurrentMenu->GetNextMenu();
+
+		for ( CMenuPanel *p = gViewPort->m_pCurrentMenu; p && p->GetNextMenu(); )
+		{
+			CMenuPanel *pNext = p->GetNextMenu();
+			if ( SgtcPanels_IsOurPanel( pNext ) )
+				p->SetNextMenu( pNext->GetNextMenu() );
+			else
+				p = pNext;
+		}
+	}
+
 	if ( s_pBriefingPanel )	s_pBriefingPanel->setVisible( false );
 	if ( s_pTeamClassPanel )	s_pTeamClassPanel->setVisible( false );
 	if ( s_pWeaponSelPanel )	s_pWeaponSelPanel->setVisible( false );
 	if ( s_pPackSelPanel )	s_pPackSelPanel->setVisible( false );
+
+	s_iSgtcDismissedMenu = 0;
 }
 
 // True while any SGTC VGUI menu is on screen — the client-side cursor gate in
 // TeamFortressViewport::UpdateCursorState uses this so the SDL cursor stays
-// ungrabbed (and clicks keep resolving) for the whole menu lifetime, including
-// when a button's HIDE_TEXTWINDOW closes m_pCurrentMenu but the SGTC panel is
-// still up as a CSgtcViewport child.
+// ungrabbed (and clicks keep resolving) for the whole menu lifetime.
 bool SgtcPanels_AnyMenuVisible( void )
 {
 	return ( s_pBriefingPanel && s_pBriefingPanel->isVisible() ) ||
@@ -1976,6 +2100,7 @@ static void SgtcPanels_CheckOwner( void )
 		s_pTeamClassPanel = NULL;
 		s_pWeaponSelPanel = NULL;
 		s_pPackSelPanel = NULL;
+		s_iSgtcDismissedMenu = 0;	// new viewport = fresh menu state
 		s_pPanelOwner = gViewPort;
 	}
 }
@@ -2017,6 +2142,11 @@ CMenuPanel *SgtcBriefing_ShowPanel( void )
 		s_pBriefingPanel->setVisible( false );
 	}
 
+	// Dedup BEFORE Reset: a resend while this menu is shown/queued/dismissed
+	// must not wipe panel state (ref same-id dedup is over the whole chain).
+	if ( !SgtcPanels_ShouldShow( SGTC_MENU_BRIEFING ) )
+		return s_pBriefingPanel;
+
 	s_pBriefingPanel->Reset();
 	SgtcPanels_ShowMenu( s_pBriefingPanel, SGTC_MENU_BRIEFING );
 	return s_pBriefingPanel;
@@ -2037,14 +2167,14 @@ CMenuPanel *SgtcTeamClass_ShowPanel( void )
 	}
 
 	// The server re-sends VGUIMenu(11) every second while the player is a
-	// dead observer (sgtc_round.cpp PlayerThink 1s teams-tick). Reset() must
-	// only run on a fresh open: unconditionally it re-arms m_bFirstPaint and
-	// clears m_iCurrentTeam, so the next paintTraverse re-hides the class
-	// list ~1s after every hover — and freevgui only fires cursorEntered on
-	// mouse-focus transitions, so a cursor parked on the team box never
-	// re-triggers SetActiveTeam to reveal it again.
-	if ( !s_pTeamClassPanel->isVisible() )
-		s_pTeamClassPanel->Reset();
+	// dead observer (sgtc_round.cpp PlayerThink 1s teams-tick). Dedup BEFORE
+	// Reset: a resend while menu 11 is shown/queued/dismissed must not re-arm
+	// m_bFirstPaint (which re-hides the class list under the cursor ~1s after
+	// every hover) nor reopen a menu the user dismissed.
+	if ( !SgtcPanels_ShouldShow( SGTC_MENU_TEAMCLASS ) )
+		return s_pTeamClassPanel;
+
+	s_pTeamClassPanel->Reset();
 	SgtcPanels_ShowMenu( s_pTeamClassPanel, SGTC_MENU_TEAMCLASS );
 	return s_pTeamClassPanel;
 }
@@ -2062,6 +2192,9 @@ CMenuPanel *SgtcWeaponSel_ShowPanel( void )
 		s_pWeaponSelPanel->setParent( gViewPort );
 		s_pWeaponSelPanel->setVisible( false );
 	}
+
+	if ( !SgtcPanels_ShouldShow( SGTC_MENU_WPSEL ) )
+		return s_pWeaponSelPanel;
 
 	s_pWeaponSelPanel->ApplyServerState();	// ref Update: Reset() honours DAT_100ddad8
 	SgtcPanels_ShowMenu( s_pWeaponSelPanel, SGTC_MENU_WPSEL );
@@ -2081,6 +2214,9 @@ CMenuPanel *SgtcPackSel_ShowPanel( void )
 		s_pPackSelPanel->setParent( gViewPort );
 		s_pPackSelPanel->setVisible( false );
 	}
+
+	if ( !SgtcPanels_ShouldShow( SGTC_MENU_PACKSEL ) )
+		return s_pPackSelPanel;
 
 	s_pPackSelPanel->Reset();
 	SgtcPanels_ShowMenu( s_pPackSelPanel, SGTC_MENU_PACKSEL );

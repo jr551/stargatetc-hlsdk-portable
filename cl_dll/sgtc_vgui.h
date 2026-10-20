@@ -116,14 +116,13 @@ CMenuPanel *SgtcPackSel_ShowPanel( void );		// VGUIMenu 60
 
 // True while any SGTC VGUI menu panel is on screen. Lets the cursor-gate in
 // TeamFortressViewport::UpdateCursorState keep the mouse ungrabbed for SGTC
-// menus even when gViewPort->m_pCurrentMenu is already NULL (e.g. after a
-// button self-close that leaves the panel shown until the next server msg).
+// menus even when gViewPort->m_pCurrentMenu doesn't reference them.
 bool SgtcPanels_AnyMenuVisible( void );
 
-// Force-hide every SGTC menu singleton regardless of m_pCurrentMenu state.
-// Menus are exclusive in the ref; a panel orphaned from the current-menu chain
-// (e.g. a stock VGUIMenu stole m_pCurrentMenu while a briefing was up) would
-// otherwise paint forever because nothing ever Close()s it.
+// Force-hide every SGTC menu singleton and unlink them from the
+// m_pCurrentMenu chain, and clear the user-dismiss mark. Called when the
+// server sends HideVGUI (close-all semantics): a hidden chained node would
+// otherwise keep deduping the next same-id resend.
 void SgtcPanels_HideAll( void );
 
 // --- weapon-selection economy state (ref client.dll globals) ----------------
@@ -147,6 +146,11 @@ int SgtcPack_GetSlots( int iTeam, int iClass, int iPack, int *piSlots );
 // VGUI root, which is the normal Xash case). Call from HUD_VidInit.
 void SgtcVgui_AttachToRoot( void );
 void SgtcVgui_Detach( void );
+
+// Per-level reset (called from SGTC_ClientHUD_VidInit): forget the last
+// user-dismissed SGTC menu so a connect-time resend isn't suppressed on a
+// fresh map. No-op for the VGUI-less build.
+void SgtcVgui_NewLevel( void );
 
 // Team helpers (client.dll protocol: "jointeam %d", "menuselect %d").
 const char *SgtcTeamName( int team );

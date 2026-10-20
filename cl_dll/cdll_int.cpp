@@ -207,6 +207,14 @@ int DLLEXPORT HUD_VidInit( void )
 	gHUD.VidInit();
 	SGTC_ClientHUD_VidInit();
 
+	// The original Win32 engine cleared the colour buffer every frame, so a
+	// hidden VGUI menu never left residue. FWGS skips the clear unless
+	// gl_clear is set; while the dead observer's free camera sits outside
+	// the map nothing writes the framebuffer and the last painted menu
+	// persists as an on-screen ghost until another menu happens to paint
+	// over it. Force the per-frame clear so a closed menu is always erased.
+	gEngfuncs.Cvar_Set( "gl_clear", "1" );
+
 	VGui_Startup();
 
 	return 1;

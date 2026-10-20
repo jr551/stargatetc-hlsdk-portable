@@ -140,6 +140,7 @@ void SGTC_ClientHUD_Init( void )
 
 void SGTC_ClientHUD_VidInit( void )
 {
+	SgtcVgui_NewLevel();	// clear the SGTC menu-dismiss mark on new level
 	SGTC_ClientProtocol_VidInit();
 	g_SgtcHud.VidInit();
 }

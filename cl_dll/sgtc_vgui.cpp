@@ -84,9 +84,10 @@ static bool SgtcVgui_RouteToViewport( int menu )
 
 	if ( SgtcVgui_IsStockMenu( menu ) )
 	{
-		// A stock menu (MOTD/team/class/briefing) is replacing whatever SGTC
-		// panel was up — drop every SGTC singleton so none ghost underneath.
-		SgtcPanels_HideAll();
+		// Stock menus share the viewport's m_pCurrentMenu chain with the SGTC
+		// panels (ref ShowVGUIMenu dedup/queue semantics): the stock call
+		// dedups by id and chains a new menu behind whatever is up, SGTC or
+		// not — no exclusive hiding.
 		gViewPort->ShowVGUIMenu( menu );
 		return true;
 	}
@@ -328,6 +329,17 @@ void SgtcVgui_Detach( void )
 {
 	delete g_pSgtcViewport;
 	g_pSgtcViewport = NULL;
+}
+
+// Called from SGTC_ClientHUD_VidInit: a new level/reconnect must forget the
+// last user-dismissed menu (s_iSgtcDismissedMenu lives in
+// sgtc_vgui_panels.cpp) — otherwise a connect-time resend of that id stays
+// suppressed on the new map.
+void SgtcVgui_NewLevel( void )
+{
+#ifdef SGTC_REAL_VGUI
+	SgtcPanels_HideAll();	// hides, unchains, clears the dismiss mark
+#endif
 }
 
 // ---------------------------------------------------------------------------

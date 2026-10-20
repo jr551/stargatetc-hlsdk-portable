@@ -709,8 +709,13 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 			( !strncmp( pPlayer->m_szTeamName, "Torri", 5 ) &&
 			0 < sgtc_T_tickets && !g_fGameOver );
 
+		// The connect-time menu-10 delay (+0x4b0) gates the menu-11 resend:
+		// while armed it suppresses the tick, so on a fresh connect the
+		// delayed briefing (10) is emitted first and the first 11 lands
+		// behind it — matching the orig front order (10 fronts, 11 queued).
 		if( !( pPlayer->m_bSnagInvisLatch || pPlayer->IsAlive() || bTickets ||
-			( pPlayer->m_bSgtcRoundAlive || g_fGameOver ) ) )
+			( pPlayer->m_bSgtcRoundAlive || g_fGameOver ) ||
+			pPlayer->m_flSgtcMenuDelay != 0.0f ) )
 			pPlayer->ShowVGUIMenu( 11 );	// ref 0xb
 
 		// ref consume gate — verbatim transcription of the mode-dependent
@@ -882,7 +887,11 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 	// the player is alive — observers and dead players consume below.
 	if( flNow > pPlayer->m_flSgtcTeamsTick && !pPlayer->IsAlive() )
 	{
-		if( pPlayer->m_bSgtcRoundAlive != 1 && !g_fGameOver )
+		// Same connect-ordering gate as the DM block: the armed menu-10
+		// briefing delay suppresses menu-11 resends until it has fired, so a
+		// fresh connect fronts menu 10 with 11 queued behind it (orig).
+		if( pPlayer->m_bSgtcRoundAlive != 1 && !g_fGameOver &&
+			pPlayer->m_flSgtcMenuDelay == 0.0f )
 			pPlayer->ShowVGUIMenu( 11 );	// ref 0xb
 
 		if( pPlayer->m_iSgtcTeam == 1 )
