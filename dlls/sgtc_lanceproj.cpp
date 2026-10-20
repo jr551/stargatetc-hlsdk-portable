@@ -67,6 +67,25 @@ void CCorpseController::Spawn( void )
 void CCorpseController::Precache( void )
 {
 	PRECACHE_SOUND( "common/bodysplat.wav" );
+	PRECACHE_SOUND( "ambience/burning3.wav" );
+}
+
+// ref NewRound entity sweep (Ghidra 0x194f42) + Think @0x14efde +0x1b8 path
+// (rea_dump/wpn/corpse.c:75-91): corpse pev reset, STOP_SOUND burning3, drop
+// flame sprite, then UTIL_Remove the controller.
+void CCorpseController::RemoveForNewRound( void )
+{
+	if( m_pCorpse )
+	{
+		m_pCorpse->pev->health = 0.0f;
+		m_pCorpse->pev->deadflag = 0;
+		m_pCorpse->pev->flags |= FL_KILLME;
+		STOP_SOUND( ENT( m_pCorpse->pev ), CHAN_STATIC, "ambience/burning3.wav" );
+	}
+	if( m_pEffect )
+		UTIL_Remove( m_pEffect );
+	m_pEffect = NULL;
+	UTIL_Remove( this );
 }
 
 void CCorpseController::Think( void )

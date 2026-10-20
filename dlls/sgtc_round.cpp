@@ -36,6 +36,7 @@
 #include "hltv.h"
 #include "sgtc_rules.h"
 #include "sgtc_misc.h" // CEntSpawn::Event
+#include "sgtc_lanceproj.h"
 
 extern DLL_GLOBAL BOOL g_fGameOver;
 extern void respawn( entvars_t *pev, BOOL fCopyCorpse ); // player.cpp
@@ -466,6 +467,16 @@ static void SGTC_NewRoundRemoveClass( const char *pszClassname, BOOL bThink )
 	}
 }
 
+static void SGTC_NewRoundRemoveCorpseControllers( void )
+{
+	CBaseEntity *pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "corpse_control" ) ) != NULL )
+	{
+		((CCorpseController *)pEnt)->RemoveForNewRound();
+		pEnt = NULL;
+	}
+}
+
 static void SGTC_NewRoundInitEntities( void )
 {
 	// ref NewRound tail (Ghidra 0x194f42) — Reset-style thinkers, then
@@ -507,7 +518,7 @@ static void SGTC_NewRoundInitEntities( void )
 	SGTC_NewRoundRemoveClass( "multi_manager", TRUE ); // ref CMultiManager::Stop — port reuses Think()
 	SGTC_NewRoundRemoveClass( "trigger_hurt", TRUE );
 
-	SGTC_NewRoundRemoveClass( "corpse_control", FALSE );
+	SGTC_NewRoundRemoveCorpseControllers();
 	SGTC_NewRoundRemoveClass( "effect_bigshield", FALSE );
 	SGTC_NewRoundRemoveClass( "monster_shieldemit", FALSE );
 	SGTC_NewRoundRemoveClass( "monster_lockdown", FALSE );

@@ -44,6 +44,7 @@ public:
 	void Spawn( void );
 	void Precache( void );
 	void EXPORT Think( void );
+	void RemoveForNewRound( void );	// ref NewRound sweep — inner corpse/effect + STOP_SOUND
 
 	CBaseEntity *m_pCorpse;	// ref +0x19c — bound corpse (feed gate)
 	CBaseEntity *m_pEffect;	// ref +0x1b8 — active effect ent (blocks feed)
