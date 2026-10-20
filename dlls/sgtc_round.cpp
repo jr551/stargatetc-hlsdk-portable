@@ -457,6 +457,29 @@ void CStargateTeamDM::Goal( int iTeam )
 }
 
 // ---------------------------------------------------------------------------
+// Think mp_timelimit outer gate — ref @0x1929ce before fraglimit/PlayMusic block.
+// Main body when: no timelimit, time < limit, or GameModeSet!=0 &&
+// (GameModeSet<1 || time<=endtround || hasplayed!=1). Else: ticket reset + +0x108.
+// ---------------------------------------------------------------------------
+BOOL SGTC_ThinkRunsMainRoundBody( void )
+{
+	float flTimeLimit = CVAR_GET_FLOAT( "mp_timelimit" ) * 60.0f;
+	if( flTimeLimit == 0.0f || gpGlobals->time < flTimeLimit )
+		return TRUE;
+	if( sgtc_GameModeSet != 0 &&
+	    ( sgtc_GameModeSet < 1 || gpGlobals->time <= sgtc_endtround || sgtc_hasplayed != 1 ) )
+		return TRUE;
+	return FALSE;
+}
+
+void SGTC_ThinkMpTimelimitResetTickets( void )
+{
+	sgtc_G_tickets = SGTC_Round_intconstrain( 0, 99,
+		SGTC_Round_roundf( sgtc_cvar_tickets.value ) );
+	sgtc_T_tickets = sgtc_G_tickets;
+}
+
+// ---------------------------------------------------------------------------
 // Think PlayMusic paths — ref CStargateTeamDM::Think @0x1929ce (stingers only).
 // Mode 0 elimination: @0x1945b7..0x194642 (endtround +4s). Modes 1/4 tickets:
 // @0x194a07..0x194b2b (endtround +6s). Goal() keeps separate @0x18b650 paths.

@@ -240,6 +240,9 @@ extern int sgtc_count_syslord, sgtc_count_prime, sgtc_count_jaffa,
 	sgtc_count_carter, sgtc_count_jackson, sgtc_count_tealc,
 	sgtc_count_commander;					// sgtc_round.cpp — BSS 0x2368f4..0x236918
 extern char sgtc_hasplayed;				// sgtc_round.cpp — BSS 0x2368f1
+extern cvar_t sgtc_cvar_tickets;			// sgtc_round.cpp (ref tickets @0x2133f8)
+BOOL SGTC_ThinkRunsMainRoundBody( void );	// ref Think mp_timelimit gate @0x1929ce
+void SGTC_ThinkMpTimelimitResetTickets( void );
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
 static const char *const s_SGTCDMSpawns[SGTC_MAX_SGTC_TEAMS] =
@@ -2230,21 +2233,25 @@ void CStargateTeamDM::Think( void )
 	if( keys > 1 )
 		ALERT( at_console, "GameRule: More than one player has a key!! Total %d\n", keys );
 
-	SGTC_ThinkPlayMusic();	// ref Think @0x1945b7..0x194b2b (ticket + elimination stingers)
-
-	// ref Think @0x1929ce: endtround+hasplayed deadline (modes 0/1/2/4) and
-	// member deadline +0x724; mp_timelimit gated separately below.
-	SGTC_ThinkEndtroundRollover();
-	if( m_flSgtcRoundEnd != 0.0f && gpGlobals->time >= m_flSgtcRoundEnd )
+	// ref Think @0x1929ce: mp_timelimit outer gate — skip fraglimit, PlayMusic,
+	// ticket logic, endtround rollover, and timeleft while map limit elapsed
+	// and (mode 0 or post-stinger: mode>=1, hasplayed, time>endtround).
+	if( SGTC_ThinkRunsMainRoundBody() )
 	{
-		m_flSgtcRoundEnd = 0.0f;
-		EndRound();
-		return;
+		SGTC_ThinkPlayMusic();	// @0x1945b7..0x194b2b
+		SGTC_ThinkEndtroundRollover();
+		if( m_flSgtcRoundEnd != 0.0f && gpGlobals->time >= m_flSgtcRoundEnd )
+		{
+			m_flSgtcRoundEnd = 0.0f;
+			EndRound();
+			return;
+		}
 	}
-
-	float flTimeLimit = CVAR_GET_FLOAT( "mp_timelimit" ) * 60;
-	if( flTimeLimit != 0 && gpGlobals->time >= flTimeLimit )
-		EndRound();
+	else
+	{
+		SGTC_ThinkMpTimelimitResetTickets();
+		GoToIntermission();
+	}
 }
 
 static int SGTC_FocusedPresenceBucket( void )
