@@ -709,8 +709,8 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_flSgtcEnvNext = sgtc_cvar_particlelatency.value / 10.0f + flNow;
 	}
 
-	// +0xa3d round-start tick: set 1s after the stored round time.
-	if( ( sgtc_roundtime_official + 1.0f ) == flNow )
+	// +0xa3d round-start tick: ref sets when gpGlobals >= round anchor + 1s.
+	if( flNow >= sgtc_roundtime_official + 1.0f )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// superweapons (+0x465 preset gate; the once-per-round latch rides
@@ -846,8 +846,8 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 
 	if( pPlayer->IsAlive() )
 		pPlayer->m_bSgtcRoundAlive = 1;
-	// (ref tail slot +0x34 is a virtual forwarder, no extra base call here —
-	// the base was already invoked at function entry.)
+
+	RedrawPortrait( pPlayer );	// ref vtable+0x34 tail @0x18d088
 }
 
 // ---------------------------------------------------------------------------
@@ -897,7 +897,7 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_flSgtcEnvNext = sgtc_cvar_particlelatency.value / 10.0f + flNow;
 	}
 
-	if( ( sgtc_roundtime_official + 1.0f ) == flNow )
+	if( flNow >= sgtc_roundtime_official + 1.0f )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// GiveFromMenu (0x4e5 + 0x4ac gate) — no supergun branch in CP.
@@ -1003,8 +1003,8 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 
 	if( pPlayer->IsAlive() )
 		pPlayer->m_bSgtcRoundAlive = 1;
-	// (ref tail slot +0x34 is a virtual forwarder, no extra base call here —
-	// the base was already invoked at function entry.)
+
+	RedrawPortrait( pPlayer );	// ref vtable+0x34 tail @0x18008c
 }
 
 // ---------------------------------------------------------------------------

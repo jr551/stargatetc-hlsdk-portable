@@ -2085,8 +2085,47 @@ void CStargateTeamDM::StartPortrait( CBasePlayer *pPlayer )
 
 void CStargateTeamDM::RedrawPortrait( CBasePlayer *pPlayer )
 {
-	// ref REG "TogglePor", 0 — no payload; portrait refresh is client-side.
-	MESSAGE_BEGIN( MSG_ALL, gmsgTogglePortrait );
+	// ref CStargateTeamCP::RedrawPortrait @0x17fc58 (DM @0x18cc54): when
+	// +0x462 (m_bSgtcBadGuy) is clear, map client "model" to portrait id 1..12
+	// and AddHudPortrait(MSG_ALL).
+	if( pPlayer->m_bSgtcBadGuy )
+		return;
+
+	char *infobuf = g_engfuncs.pfnGetInfoKeyBuffer( pPlayer->edict() );
+	const char *model = g_engfuncs.pfnInfoKeyValue( infobuf, "model" );
+	int sprId = 12;
+	if( model && model[0] )
+	{
+		for( int i = 0; i < (int)SGTC_NUM_PORTRAITS; i++ )
+		{
+			if( !strcmp( model, s_SGTCPortraits[i] ) )
+			{
+				sprId = i + 1;
+				break;
+			}
+		}
+	}
+
+	int hp = (int)pPlayer->pev->health;
+	if( hp < 0 )
+		hp = 0;
+	if( hp > 100 )
+		hp = 100;
+	const char *name = STRING( pPlayer->pev->netname );
+	if( !name || !name[0] )
+		name = pPlayer->m_szTeamName[0] ? pPlayer->m_szTeamName : "player";
+
+	MESSAGE_BEGIN( MSG_ALL, gmsgAddPortrait, NULL );
+		WRITE_SHORT( sprId );
+		WRITE_LONG( hp );
+		WRITE_SHORT( (int)pPlayer->pev->team );
+		WRITE_SHORT( pPlayer->m_iSgtcPortraitShown );
+		WRITE_SHORT( pPlayer->entindex() );
+		WRITE_SHORT( hp );
+		WRITE_SHORT( 100 );
+		WRITE_SHORT( (int)pPlayer->pev->armorvalue );
+		WRITE_STRING( name );
+		WRITE_BYTE( 0 );
 	MESSAGE_END();
 }
 
