@@ -1470,7 +1470,15 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 				break;
 			case OBS_ROAMING:
 				VectorCopy( v_cl_angles, v_angles );
-				VectorCopy( v_sim_org, v_origin );
+				// FWGS cl.simorg can lag the server UTIL_SetOrigin on connect-dead
+				// observer (MOVETYPE_NONE); the local entity origin matches the ref
+				// observer spot and keeps the main pass inside the map PVS.
+				{
+					cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
+					const float *src = ( pl && pl->index > 0 ) ? pl->origin : v_sim_org;
+					VectorCopy( src, v_origin );
+					v_origin[2] += 28.0f;
+				}
 				// override values if director is active
 				gHUD.m_Spectator.GetDirectorCamera(v_origin, v_angles);
 				break;
@@ -1529,7 +1537,7 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 
 	// write back new values into pparams
 	VectorCopy( v_cl_angles, pparams->cl_viewangles );
-	VectorCopy( v_angles, pparams->viewangles )
+	VectorCopy( v_angles, pparams->viewangles );
 	VectorCopy( v_origin, pparams->vieworg );
 }
 

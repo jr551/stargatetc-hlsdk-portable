@@ -1783,6 +1783,12 @@ void CHudSpectator::CheckSettings()
 {
 	// disallow same inset mode as main mode:
 	m_pip->value = (int)m_pip->value;
+
+	// Solo dead observer (no chase target): orig fills the viewport with the
+	// roaming 3D view. FWGS + gl_clear leaves grey outside the PIP inset when
+	// spec_pip promotes to INSET_MAP_FREE (CheckSettings below).
+	if( g_iUser1 == OBS_ROAMING && g_iUser2 == 0 )
+		m_pip->value = INSET_OFF;
 	
 	if( ( g_iUser1 < OBS_MAP_FREE ) && ( m_pip->value == INSET_CHASE_FREE || m_pip->value == INSET_IN_EYE ) )
 	{
