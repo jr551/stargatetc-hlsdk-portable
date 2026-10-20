@@ -282,6 +282,7 @@ public:
 	void Spawn( void );
 	void EXPORT BombZoneTouch( CBaseEntity *pOther );
 	void EXPORT BombThink( void );
+	void ResetForNewRound( void );
 
 	BOOL m_fSatchelIn;	// +0x241
 	BOOL m_fFired;		// +0x242
@@ -351,7 +352,24 @@ void CTriggerBomb::BombThink( void )
 	pev->nextthink = gpGlobals->time + 0.1f;
 }
 
+void CTriggerBomb::ResetForNewRound( void )
+{
+	// ref CStargateTeamDM::NewRound @0x194f42 zone_bomb_target walk.
+	pev->health = 69.0f;	// 0x428a0000 — triggers BombThink reset block
+	BombThink();
+}
+
 LINK_ENTITY_TO_CLASS( zone_bomb_target, CTriggerBomb );
+
+void SGTC_Zones_ResetBombTargets( void )
+{
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "zone_bomb_target" ) ) != NULL )
+	{
+		((CTriggerBomb *)pScan)->ResetForNewRound();
+		pScan = NULL;
+	}
+}
 
 // SGTC_Zones_ResetCaptureZones — ref NewRound @0x187b34 zone_capture walk
 // (double pass, net effect): +0x244/+0x240/+0x250 = 0,

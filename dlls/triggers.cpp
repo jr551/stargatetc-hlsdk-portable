@@ -254,6 +254,7 @@ public:
 	void Spawn( void );
 	void EXPORT ManagerThink( void );
 	void EXPORT ManagerUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+	void Stop( void );	// ref CMultiManager::Stop @nm 0x196e6c — NewRound mid-fire abort
 
 #if _DEBUG
 	void EXPORT ManagerReport( void );
@@ -364,6 +365,18 @@ BOOL CMultiManager::HasTarget( string_t targetname )
 			return TRUE;
 
 	return FALSE;
+}
+
+void CMultiManager::Stop( void )
+{
+	// ref @0x1a6e6c: clear fire cursor, drop think, re-arm use (or remove clone).
+	m_index = 0;
+	m_startTime = 0;
+	SetThink( NULL );
+	if( IsClone() )
+		UTIL_Remove( this );
+	else
+		SetUse( &CMultiManager::ManagerUse );
 }
 
 // Designers were using this to fire targets that may or may not exist -- 

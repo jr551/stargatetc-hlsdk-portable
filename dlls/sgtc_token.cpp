@@ -52,6 +52,7 @@ public:
 
 	int Activator( CBaseEntity *pPlayer );
 	void Deconax( void );
+	void ResetForNewRound( void );	// ref NewRound: pev+0x160=30 then vslot +0xc4 (Think)
 
 private:
 	int m_iCountdown;	// ref this+0x19c (KeyValue "countdown")
@@ -107,6 +108,13 @@ void CToken::Deconax( void )
 	pev->rendermode = 0;
 	pev->renderamt = 255.0f;
 	pev->health = 100.0f;
+}
+
+void CToken::ResetForNewRound( void )
+{
+	// ref CStargateTeamDM::NewRound @0x194f42 game_nuke walk.
+	pev->health = 30.0f;	// 0x41f00000 — arms Deconax path, avoids detonation
+	Think();
 }
 
 // ref @0x1a446c: returns 1 when a qualifying player finished arming.

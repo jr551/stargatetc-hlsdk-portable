@@ -37,12 +37,25 @@
 #include "sgtc_rules.h"
 #include "sgtc_misc.h" // CEntSpawn::Event
 #include "sgtc_lanceproj.h"
+#include "sgtc_zones.h"
 
 // ref NewRound sweep: CSatchelCharge::Deactivate @nm 0x155a1c (pev+0x10c=0, UTIL_Remove)
 class CSatchelCharge : public CGrenade
 {
 public:
 	void Deactivate( void );
+};
+
+class CToken : public CBaseDelay
+{
+public:
+	void ResetForNewRound( void );
+};
+
+class CMultiManager : public CBaseToggle
+{
+public:
+	void Stop( void );
 };
 
 extern DLL_GLOBAL BOOL g_fGameOver;
@@ -494,6 +507,26 @@ static void SGTC_NewRoundRemoveSatchels( void )
 	}
 }
 
+static void SGTC_NewRoundResetNukes( void )
+{
+	CBaseEntity *pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "game_nuke" ) ) != NULL )
+	{
+		((CToken *)pEnt)->ResetForNewRound();
+		pEnt = NULL;
+	}
+}
+
+static void SGTC_NewRoundStopMultiManagers( void )
+{
+	CBaseEntity *pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "multi_manager" ) ) != NULL )
+	{
+		((CMultiManager *)pEnt)->Stop();
+		pEnt = NULL;
+	}
+}
+
 static void SGTC_NewRoundInitEntities( void )
 {
 	// ref NewRound tail (Ghidra 0x194f42) — Reset-style thinkers, then
@@ -503,6 +536,7 @@ static void SGTC_NewRoundInitEntities( void )
 	SGTC_NewRoundRemoveClass( "func_door_rotating", TRUE );
 	SGTC_NewRoundRemoveClass( "func_button", TRUE );
 	SGTC_NewRoundRemoveClass( "func_rot_button", TRUE );
+	SGTC_NewRoundStopMultiManagers();	// ref: CMultiManager::Stop (not Think)
 	SGTC_NewRoundRemoveClass( "func_rotating", TRUE );
 	SGTC_NewRoundRemoveClass( "func_train", TRUE );
 	SGTC_NewRoundRemoveClass( "func_illusionary", TRUE );
@@ -517,8 +551,8 @@ static void SGTC_NewRoundInitEntities( void )
 	SGTC_NewRoundRemoveClass( "trigger_auto", TRUE );
 	SGTC_NewRoundRemoveClass( "light", TRUE );
 	SGTC_NewRoundRemoveClass( "light_spot", TRUE );
-	SGTC_NewRoundRemoveClass( "game_nuke", TRUE );
-	SGTC_NewRoundRemoveClass( "zone_bomb_target", TRUE );
+	SGTC_NewRoundResetNukes();		// ref: pev+0x160=30 then Think (+0xc4)
+	SGTC_Zones_ResetBombTargets();	// ref: pev+0x160=69 then Think (+0xc4)
 	SGTC_NewRoundRemoveClass( "trigger_changetarget", TRUE );
 	SGTC_NewRoundRemoveClass( "trigger_multiple", TRUE );
 	SGTC_NewRoundRemoveClass( "trigger_once", TRUE );
@@ -532,8 +566,6 @@ static void SGTC_NewRoundInitEntities( void )
 	SGTC_NewRoundRemoveClass( "env_particule", TRUE );
 	SGTC_NewRoundRemoveClass( "env_fountain", TRUE );
 	SGTC_NewRoundRemoveClass( "env_beam", TRUE );
-	SGTC_NewRoundRemoveClass( "multi_manager", TRUE ); // ref CMultiManager::Stop — port reuses Think()
-	SGTC_NewRoundRemoveClass( "trigger_hurt", TRUE );
 
 	SGTC_NewRoundRemoveCorpseControllers();
 	SGTC_NewRoundRemoveClass( "effect_bigshield", FALSE );
