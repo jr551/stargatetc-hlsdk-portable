@@ -135,7 +135,7 @@ cvar_t sgtc_cvar_respawntime = { "mp_respawntime", "10", FCVAR_SERVER };
 cvar_t sgtc_cvar_diepoints = { "mp_diepoints", "2", FCVAR_SERVER };	// ref vicpoints @0x213524 — cvar_t.string "2"
 cvar_t sgtc_cvar_killpoints = { "mp_killpoints", "1", FCVAR_SERVER };	// ref killpoints @0x213538 — cvar_t.string "1"
 cvar_t sgtc_cvar_truezat = { "mp_truezat", "0", FCVAR_SERVER };	// ref truezat @0x2368d4
-cvar_t sgtc_cvar_wepselmode = { "mp_wepselmode", "2", FCVAR_SERVER };	// ref weaponsel @0x223484 — spawn menu mode (1->0xc, 2->0x3c)
+cvar_t sgtc_cvar_wepselmode = { "mp_wepselmode", "1", FCVAR_SERVER };	// ref weaponsel @0x223484 — spawn menu mode; ref cvar name @0x1e0f51 registers default "1" (@0x1dfabd)
 cvar_t sgtc_cvar_freeguns = { "mp_freeguns", "0", FCVAR_SERVER };		// ref freeguns @0x2238f8 — CP spawn grants all slots when >1
 cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };	// ref attackcountdown @0x22390c
 
