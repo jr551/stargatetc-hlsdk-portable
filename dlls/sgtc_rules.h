@@ -141,6 +141,7 @@ protected:
 	int m_iSgtcRoundTicks;		// ref +0x73c: Goal guard + NewRound zero (restart counter)
 	int m_iSgtcFirstTicks;		// ref +0x750: NewRound writes -5 (0xfffffffb)
 	int m_iSgtcEmptyTeams;		// ref +0x758: 0 both/G/T=1/2/3 empty-teams state
+	int m_iSgtcFocusedBucket;	// ref +0x75c: 0 none / 1 one side / 2 both focused
 	int m_iSgtcAutoBalance;		// ref +0x768: 0 none, 1 ->T light, 2 ->G light
 	char m_bSgtcVoteEqual;		// ref +0x774: unanimous-vote flag
 	BOOL m_bDisableDeathMessages;	// ref this+0xc — armed around forced ChangePlayerTeam kill

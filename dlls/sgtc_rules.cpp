@@ -222,6 +222,7 @@ extern void SetWeaponAllow( CBasePlayer *pPlayer );	// ref @0x17a26c — reads +
 extern cvar_t *const sgtc_wpnC[28];	// sgtc_round.cpp — ref wpnC0..wpnC27 cost cvars
 extern float sgtc_endtround;	// sgtc_round.cpp (ref BSS endtround @0x2468b8, goal+6s deadline)
 extern char sgtc_round_official;			// sgtc_round.cpp (ref BSS 0x236888)
+extern float sgtc_nrcooler;				// sgtc_round.cpp (ref BSS 0x2368b4)
 extern cvar_t sgtc_cvar_autobalance;		// sgtc_round.cpp (ref autobalance @0x213420)
 extern cvar_t sgtc_cvar_classlimitmodel;	// sgtc_round.cpp (ref classlimitmodel @0x2135d8)
 extern cvar_t sgtc_cvar_max_syslord;		// ref @0x213650
@@ -2211,6 +2212,29 @@ void CStargateTeamDM::Think( void )
 		EndRound();
 }
 
+static int SGTC_FocusedPresenceBucket( void )
+{
+	// ref CStargateTeamCP::Think @0x1853e8 local_84 from G/T_players_focused.
+	if( sgtc_G_players_focused < 1 || sgtc_T_players_focused < 1 )
+	{
+		if( sgtc_G_players_focused < 1 && sgtc_T_players_focused < 1 )
+			return 0;
+		return 1;
+	}
+	return 2;
+}
+
+static void SGTC_CPType4TicketSideReset( CStargateTeamCP *pCP )
+{
+	if( sgtc_type != 4 )
+		return;
+	if( pCP->m_iSgtcCPSide == 1 )
+		pCP->InverseSpawns();
+	pCP->m_iSgtcCPSide = 0;
+	sgtc_G_tickets = 0;
+	sgtc_T_tickets = 0;
+}
+
 void CStargateTeamCP::Think( void )
 {
 	// ref CStargateTeamCP::Think @0x1853e8 — shared resetround block plus type==4
@@ -2227,17 +2251,33 @@ void CStargateTeamCP::Think( void )
 			if( iGoauld >= 0 )
 				m_iSGTCTeamScores[iGoauld] = 0;
 		}
-		if( sgtc_type == 4 )
-		{
-			if( m_iSgtcCPSide == 1 )
-				InverseSpawns();
-			m_iSgtcCPSide = 0;
-			sgtc_G_tickets = 0;
-			sgtc_T_tickets = 0;
-		}
+		SGTC_CPType4TicketSideReset( this );
 		EndRound();
 		CVAR_SET_FLOAT( "mp_resetround", 0.0f );
 		return;
+	}
+
+	// ref: this+0x75c focused-presence transition (empty-team paths).
+	int iBucket = SGTC_FocusedPresenceBucket();
+	if( m_iSgtcFocusedBucket != iBucket )
+	{
+		SGTC_CPType4TicketSideReset( this );
+		sgtc_nrcooler = 0.0f;
+		EndRound();
+		m_iSgtcFocusedBucket = iBucket;
+	}
+
+	// ref: round_official set but tournament fairness / min-4 reject.
+	if( sgtc_round_official != 0 )
+	{
+		int iAvg = ( sgtc_G_players_focused + sgtc_T_players_focused ) / 2;
+		BOOL bFair = sgtc_G_players_focused <= iAvg + 2 &&
+			sgtc_T_players_focused <= iAvg + 2;
+		if( !bFair || sgtc_G_players_focused < 4 || sgtc_T_players_focused < 4 )
+		{
+			SGTC_CPType4TicketSideReset( this );
+			EndRound();
+		}
 	}
 
 	CStargateTeamDM::Think();
