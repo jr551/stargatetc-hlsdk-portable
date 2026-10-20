@@ -222,6 +222,29 @@ public:
 	}
 };
 
+// Join-action companion to CSgtcHandler_DismissMenu: the join buttons
+// (spectate/autopick/classe cells) go through CMenuHandler_StringCommand +
+// CMenuHandler_TextWindow(HIDE_TEXTWINDOW), which close the menu without
+// recording a dismissal. A dead-observer VGUIMenu(11) resend that lands after
+// the pop but before the spawn's IsAlive() gate closes the window then
+// re-installs menu 11 over the live first-person view (spawn race —
+// .rea/spawn_vgui_rea.md). Marking the front id FIRST (this signal precedes
+// the command/close signals in the button's list) makes that late resend
+// dedup exactly like an Annuler dismiss; the mark still clears on the next
+// different-menu front dismissal, so Ok/dismiss re-pop semantics survive.
+class CSgtcHandler_JoinMark : public ActionSignal
+{
+public:
+	virtual void actionPerformed( Panel *panel )
+	{
+		if ( gViewPort && gViewPort->m_pCurrentMenu )
+		{
+			s_iSgtcDismissedMenu = gViewPort->m_pCurrentMenu->GetMenuID();
+			gEngfuncs.Con_Printf( "[sgtc] JoinMark id %d\n", s_iSgtcDismissedMenu );
+		}
+	}
+};
+
 //============================================================================
 // Weapon-selection economy state — exact port of the ref client.dll globals
 // the menu-12 panel reads (all BSS in the ref, filled by two usermessages):
@@ -790,6 +813,7 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		// 'jointeam' verb is not used), then close the menu.
 		snprintf( szCommand, sizeof( szCommand ), "classe %d %d",
 			iCol + 1, iTeam + 1 );
+		m_pClassButton[iClass]->addActionSignal( new CSgtcHandler_JoinMark() );
 		m_pClassButton[iClass]->addActionSignal( new CMenuHandler_StringCommand( szCommand ) );
 		m_pClassButton[iClass]->addActionSignal( new CMenuHandler_TextWindow( HIDE_TEXTWINDOW ) );
 
@@ -880,11 +904,13 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 	m_pSpecButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Spectateur" ),
 		XRES( 127 ), ScreenHeight - YRES( 33 ), XRES( 105 ), YRES( 28 ) );
 	m_pSpecButton->setParent( this );
+	m_pSpecButton->addActionSignal( new CSgtcHandler_JoinMark() );
 	m_pSpecButton->addActionSignal( new CMenuHandler_StringCommand( "spectate", 1 ) );
 
 	m_pAutoButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#AutoAssign" ),
 		XRES( 274 ), ScreenHeight - YRES( 33 ), XRES( 105 ), YRES( 28 ) );
 	m_pAutoButton->setParent( this );
+	m_pAutoButton->addActionSignal( new CSgtcHandler_JoinMark() );
 	m_pAutoButton->addActionSignal( new CMenuHandler_StringCommand( "autopick", 1 ) );
 
 	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
