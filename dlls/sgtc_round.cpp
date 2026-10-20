@@ -423,36 +423,34 @@ void CStargateTeamDM::EndRound( void )
 // ---------------------------------------------------------------------------
 void CStargateTeamDM::Goal( int iTeam )
 {
-	// ref @0x17b650: guards on rules+0x73c (m_bRoundOver), hasplayed
-	// (BSS 0x2368f1), GameModeSet==0 || ==2.
-	if( m_bRoundOver != 0 || sgtc_hasplayed != 0 )
+	// ref @0x18b650: guards on rules+0x73c (m_iSgtcRoundTicks; DM +0x740 is
+	// m_bRoundOver used only in FPlayerCanRespawn), hasplayed (BSS 0x2368f1),
+	// GameModeSet==0 || ==2.
+	if( m_iSgtcRoundTicks != 0 || sgtc_hasplayed != 0 )
 		return;
 	if( sgtc_GameModeSet != 0 && sgtc_GameModeSet != 2 )
 		return;
 
 	if( iTeam == 1 )
 	{
-		// ref @0x17b6a7: KeyInPlay(BSS 0x2368c6) = 0 first, then PlayMusic(1).
+		// ref @0x18b6a7: KeyInPlay(BSS 0x2368c6) = 0 first, then PlayMusic(1).
 		sgtc_KeyInPlay = 0;
 		SGTC_PlayMusic( 1 );
-		// ref @0x17b6c5: endtround = gpGlobals->time + 6.0f (rodata 0x1dbba0).
+		// ref @0x18b6c5: endtround = gpGlobals->time + 6.0f (rodata 0x1dbba0).
 		sgtc_endtround = gpGlobals->time + 6.0f;
-		m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;	// ref name 0x1dbb88
+		m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;	// ref &DAT_0x1ebb90
 	}
 	else if( iTeam == 2 )
 	{
-		// ref @0x17b70e: KeyInPlay = 0 here too.
+		// ref @0x18b70e: KeyInPlay = 0 here too.
 		sgtc_KeyInPlay = 0;
 		SGTC_PlayMusic( 0 );
 		sgtc_endtround = gpGlobals->time + 6.0f;
-		m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;	// ref name 0x1dbb98
-	}
-	else
-	{
-		return;
+		m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;	// ref "Torri" @0x1ebb98
 	}
 
-	sgtc_hasplayed = 1;	// ref @0x17b76d
+	// ref @0x18b76d: hasplayed even when iTeam is neither 1 nor 2.
+	sgtc_hasplayed = 1;
 }
 
 // ---------------------------------------------------------------------------
