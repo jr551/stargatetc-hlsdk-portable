@@ -203,6 +203,7 @@ public:
 	float	m_flNukeChargeTime;	// ref +0x42c: arm-charge tick deadline (now+0.15)
 	int	m_iNukeCharge;		// ref +0x45c: arm charge, fires at 100
 	int	m_iInBombZone;		// ref +0xaec: >=1 while inside zone_bomb_target scope
+	int	m_iSgtcFocusedKills;	// ref +0x930 — inflictor streak (Killed); tourny elite tiers
 	int	m_iNukeBonus;		// ref +0x934: +4 on nuke arming; Progress HUD icon byte
 	int	m_iProgressSentPri;	// ref +0x444: last Progress pri sent (+0x45c)
 	char	m_bSgtcCloakTick;	// ref +0x448 — SgtcThink cloak pulse @0x139b5d (CP spawn / invis)

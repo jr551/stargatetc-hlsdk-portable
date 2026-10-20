@@ -38,6 +38,7 @@
 #include "sgtc_misc.h" // CEntSpawn::Event
 #include "sgtc_lanceproj.h"
 #include "sgtc_zones.h"
+#include "sgtc_monsters.h"
 
 // ref NewRound sweep: CSatchelCharge::Deactivate @nm 0x155a1c (pev+0x10c=0, UTIL_Remove)
 class CSatchelCharge : public CGrenade
@@ -1574,12 +1575,25 @@ void CStargateTeamDM::Penalty( CBasePlayer *pVictim, entvars_t *pKillerEv )
 	}
 }
 
+static int SGTC_TournyTierFromFocusedKills( int iKills )
+{
+	int iTier = ( iKills > 4 ) ? 1 : 0;
+	if( iKills > 9 )
+		iTier = 2;
+	if( iKills > 14 )
+		iTier = 3;
+	if( iKills > 19 )
+		iTier = 4;
+	return iTier;
+}
+
 void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 	entvars_t *pKiller, entvars_t *pInflictor )
 {
 	// ref @0x18fb66: Penalty(victim, killerEv) runs FIRST, before stock.
 	Penalty( pVictim, pKiller );
 
+	CBasePlayer *pKillerPl = NULL;
 	if( pKiller )
 	{
 		CBaseEntity *pKillerEnt = CBaseEntity::Instance( pKiller );
@@ -1590,19 +1604,48 @@ void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 		if( pKillerEnt && pKillerEnt != pVictim &&
 			pKillerEnt->pev->team != pVictim->pev->team )
 		{
-			( (CBasePlayer *)pKillerEnt )->m_iNukeBonus +=
+			pKillerPl = (CBasePlayer *)pKillerEnt;
+			pKillerPl->m_iNukeBonus +=
 				SGTC_Round_roundf( sgtc_cvar_killpoints.value );
 			pVictim->m_iNukeBonus +=
 				SGTC_Round_roundf( sgtc_cvar_diepoints.value );
 		}
+
+		// ref @0x18fc20: spawn-camp window (+0x4a8) + crazymode>0 + enemy killer
+		// -> killer +0x4a4 = now+10, monster_skull at killer origin +/-500.
+		if( pKillerPl && gpGlobals->time < pVictim->m_flSpawnProxDeadline &&
+			sgtc_crazymode > 0.0f )
+		{
+			Vector vecSpot = pKillerPl->pev->origin;
+			vecSpot.x += (float)( SGTC_Round_rand( 0, 1000 ) - 500 );
+			vecSpot.y += (float)( SGTC_Round_rand( 0, 1000 ) - 500 );
+			vecSpot.z += (float)( SGTC_Round_rand( 0, 1000 ) - 500 );
+			pKillerPl->m_flSpawnCampTouch = gpGlobals->time + 10.0f;
+			CBaseEntity *pSkull = CBaseEntity::Create( "monster_skull", vecSpot,
+				pKillerPl->pev->v_angle, NULL );
+			if( pSkull )
+			{
+				((CSGTCSkull *)pSkull)->m_pSkullOwner = pKillerPl;
+				pSkull->pev->dmg = 0;	// ref pev+0x16c
+			}
+		}
 	}
 
-	// monster_skull drop on death (PlayerKilled strings).
-	CBaseEntity::Create( "monster_skull", pVictim->pev->origin,
-		pVictim->pev->angles, NULL );
+	// ref @0x18fdce: remove skulls owned by the victim (+0xc0).
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "monster_skull" ) ) != NULL )
+	{
+		if( ((CSGTCSkull *)pScan)->m_pSkullOwner == pVictim )
+			UTIL_Remove( pScan );
+	}
 
-	// ref +0x4de flag reset: the invis snag latch is cleared on death.
-	pVictim->m_bSnagInvisLatch = 0;
+	// ref @0x18fe2e: crazymode == 2.0 -> three skulls at victim origin.
+	if( sgtc_crazymode == 2.0f )
+	{
+		for( int i = 0; i < 3; i++ )
+			CBaseEntity::Create( "monster_skull", pVictim->pev->origin,
+				g_vecZero, NULL );
+	}
 
 	// ref @0x18fe70: GameModeSet 1/3/4 -> victim team ticket decrement +
 	// gmsgGtickets/gmsgTtickets WRITE_BYTE broadcasts.
@@ -1626,7 +1669,23 @@ void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 	if( !m_bDisableDeathPenalty )
 	{
 		CHalfLifeMultiplay::PlayerKilled( pVictim, pKiller, pInflictor );
-		RecountTeams( TRUE );
+		UpdateGameMode( pVictim );	// ref vtable+0x34
+		RecountTeams( FALSE );		// ref RecountTeams(this, 0)
+	}
+
+	// ref @0x18ffe5: death latch for capture-zone fade (+0x464).
+	pVictim->m_bSgtcPad464 = 1;
+
+	// ref @0x19000e: tourny + round_official -> elite tier from +0x930 streak.
+	if( sgtc_tourny != 0.0f && sgtc_round_official != 0 )
+	{
+		const int iTier = SGTC_TournyTierFromFocusedKills(
+			pVictim->m_iSgtcFocusedKills );
+		if( pVictim->m_iSgtcElite < iTier )
+		{
+			pVictim->m_iSgtcElite = iTier;
+			pVictim->m_iSgtcFocusedKills = 0;
+		}
 	}
 }
 

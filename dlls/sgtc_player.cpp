@@ -857,7 +857,7 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 			return TRUE;
 		CBaseEntity *pScan = NULL;
 		while( ( pScan = UTIL_FindEntityByClassname( pScan, "monster_skull" ) ) != NULL )
-			((CSGTCSkull *)pScan)->m_iSgtcField = 0;	// [INFERENCE] ref +0xc0
+			((CSGTCSkull *)pScan)->m_pSkullOwner = NULL;	// ref +0xc0
 		return TRUE;
 	}
 

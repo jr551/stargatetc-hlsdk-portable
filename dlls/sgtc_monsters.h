@@ -162,7 +162,7 @@ public:
 	void EXPORT SkullTouch( CBaseEntity *pOther );
 
 	float m_flNextSound;
-	int m_iSgtcField;	// [INFERENCE] ref +0xc0 — cleared by "recallall" client cmd
+	CBasePlayer *m_pSkullOwner;	// ref entity+0xc0 — owned skulls (PlayerKilled sweep)
 };
 
 // Proximity mine. Stock analogue: CTripmineGrenade (CGrenade base).

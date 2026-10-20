@@ -915,6 +915,14 @@ void CBasePlayer::Killed( entvars_t *pevAttacker, int iGib )
 
 	g_pGameRules->PlayerKilled( this, pevAttacker, g_pevLastInflictor );
 
+	// ref CBasePlayer::Killed @0x14f560: weapon inflictor (+0x930) kill credit.
+	if( g_pevLastInflictor && pev != g_pevLastInflictor )
+	{
+		CBaseEntity *pInflictor = CBaseEntity::Instance( g_pevLastInflictor );
+		if( pInflictor && pInflictor->IsPlayer() )
+			((CBasePlayer *)pInflictor)->m_iSgtcFocusedKills++;
+	}
+
 	if( m_pTank != 0 )
 		m_pTank->Use( this, this, USE_OFF, 0 );
 
