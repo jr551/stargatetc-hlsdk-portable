@@ -156,7 +156,7 @@ public:
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
 	void PlayerThink( CBasePlayer *pPlayer ) override;
 	void NewRound( void );
-	void InitHUD( CBasePlayer *pPlayer ) override;	// ref @0x1733f2
+	void InitHUD( CBasePlayer *pPlayer ) override;	// ref @0x1833f2
 	BOOL ClientCommand( CBasePlayer *pPlayer, const char *pcmd ) override;	// ref @0x183b88
 	void ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer ) override;	// ref @0x182c02
 	edict_t *GetPlayerSpawnSpot( CBasePlayer *pPlayer );

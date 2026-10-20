@@ -661,7 +661,7 @@ void CStargateTeamDM::InitHUD( CBasePlayer *pPlayer )
 
 void CStargateTeamCP::InitHUD( CBasePlayer *pPlayer )
 {
-	// ref @0x1733f2 — DM InitHUD variant minus ShowVGUIMenu: clears +0x3e3,
+	// ref @0x1833f2 — DM InitHUD variant minus ShowVGUIMenu: clears +0x3e3,
 	// portrait-shown=1, portrait-sel/team/env-stage=0, empty team-name, stock
 	// Multiplay InitHUD, MSG_ONE TeamNames + 28 pad bytes, RecountTeams(0),
 	// SetHudRoundTime(0,0), per-player TeamInfo, self ScoreInfo, portrait
@@ -676,6 +676,10 @@ void CStargateTeamCP::InitHUD( CBasePlayer *pPlayer )
 	// alive this round.
 	pPlayer->m_bSgtcRoundAlive = 0;	// ref +0x3e4 seen-alive latch
 	pPlayer->m_iSgtcPortraitShown = 1;	// ref +0xa40
+	pPlayer->m_iSgtcPortraitSel = 0;	// ref +0xa44
+	pPlayer->m_iSgtcTeam = 0;			// ref +0x438
+	pPlayer->m_iSgtcEnvStage = 0;		// ref +0xc90
+	pPlayer->m_szTeamName[0] = '\0';	// ref +0xe08 strncpy
 	CHalfLifeMultiplay::InitHUD( pPlayer );
 
 	MESSAGE_BEGIN( MSG_ONE, gmsgTeamNames, NULL, pPlayer->edict() );

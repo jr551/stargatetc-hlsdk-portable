@@ -530,7 +530,6 @@ public:
 		if ( m_pPanel )
 			m_pPanel->SetActiveTeam( m_iTeam );
 	}
-
 	void cursorMoved( int x, int y, Panel *panel ) {}
 	void mousePressed( MouseCode code, Panel *panel ) {}
 	void mouseReleased( MouseCode code, Panel *panel ) {}
@@ -575,6 +574,9 @@ private:
 CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int y, int wide, int tall )
 	: CMenuPanel( iTrans, iRemoveMe, x, y, wide, tall )
 {
+	// Init before the implicit CMenuPanel::Reset() at the end of this ctor —
+	// Reset reads m_iCurrentTeam through the m_bFirstPaint paint path.
+	m_iCurrentTeam = -1;
 	// ref schemes: "Title Font" (title + team headers) / "Briefing Text" (all
 	// info panels, fg 0x55,0x73,0xb9, bg from the scheme).
 	CSchemeManager *pSchemes = gViewPort->GetSchemeManager();
@@ -854,8 +856,25 @@ void CSgtcTeamClassPanel::paintTraverse( bool repaint )
 			m_pClassInfo[i]->setVisible( false );
 			m_pPortrait[i]->setVisible( false );
 		}
-		m_iCurrentTeam = -1;
 	}
+
+	// Re-assert the revealed team's visibility inside the paint pass itself:
+	// setVisible only flips the flag — it marks no repaint and does not
+	// re-solve, so a hide/setVisible-toggle done between a child's last
+	// solve and this traverse can leave it flagged visible yet undrawn.
+	// Doing it here (pre-traversal, every frame) self-repairs any such gap.
+	if ( m_iCurrentTeam >= 0 && m_iCurrentTeam < SGTC_TEAMCLASS_TEAMS )
+	{
+		m_pTeamWindow[0]->setVisible( true );
+		m_pTeamHeader[0]->setVisible( true );
+		m_pTeamInfo[0]->setVisible( m_iCurrentTeam == 0 );
+		m_pTeamInfo[1]->setVisible( m_iCurrentTeam == 1 );
+
+		for ( int i = 0; i < SGTC_TEAMCLASS_COUNT; i++ )
+			m_pClassButton[i]->setVisible(
+				i / SGTC_TEAMCLASS_PER_TEAM == m_iCurrentTeam );
+	}
+
 	Panel::paintTraverse( repaint );
 }
 
@@ -910,6 +929,13 @@ void CSgtcTeamClassPanel::SetActiveTeam( int iTeam )
 	}
 	for ( int i = 0; i < SGTC_TEAMCLASS_TEAMS; i++ )
 		m_pTeamButton[i]->setArmed( i == iTeam );
+
+	// setVisible alone neither repaints nor re-solves: force both on the
+	// revealed subtree NOW (hover enters mid-frame, so the next paint pass
+	// would otherwise see stale clipRects / a cleared repaint flag) and let
+	// the paintTraverse re-assert keep it sticky afterwards.
+	solveTraverse();
+	repaint();
 	if ( getSurfaceBase() )
 		repaintAll();
 }
@@ -2010,7 +2036,15 @@ CMenuPanel *SgtcTeamClass_ShowPanel( void )
 		s_pTeamClassPanel->setVisible( false );
 	}
 
-	s_pTeamClassPanel->Reset();
+	// The server re-sends VGUIMenu(11) every second while the player is a
+	// dead observer (sgtc_round.cpp PlayerThink 1s teams-tick). Reset() must
+	// only run on a fresh open: unconditionally it re-arms m_bFirstPaint and
+	// clears m_iCurrentTeam, so the next paintTraverse re-hides the class
+	// list ~1s after every hover — and freevgui only fires cursorEntered on
+	// mouse-focus transitions, so a cursor parked on the team box never
+	// re-triggers SetActiveTeam to reveal it again.
+	if ( !s_pTeamClassPanel->isVisible() )
+		s_pTeamClassPanel->Reset();
 	SgtcPanels_ShowMenu( s_pTeamClassPanel, SGTC_MENU_TEAMCLASS );
 	return s_pTeamClassPanel;
 }

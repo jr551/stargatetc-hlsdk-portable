@@ -2,9 +2,9 @@
 //
 // Clean-room port of the ref round core (ref/stc_i386.so):
 //   CStargateTeamDM::PlayerThink  nm 0x17d088 (Ghidra 0x18d088)
-//   CStargateTeamCP::PlayerThink  nm 0x18008c (Ghidra 0x19008c)
+//   CStargateTeamCP::PlayerThink  nm 0x17008c (Ghidra 0x18008c)
 //   CStargateTeamDM::NewRound     nm 0x184f42 (Ghidra 0x194f42)
-//   CStargateTeamCP::NewRound     nm 0x187b34 (Ghidra 0x197b34)
+//   CStargateTeamCP::NewRound     nm 0x177b34 (Ghidra 0x187b34)
 //   CStargateTeamDM::Goal(int)    nm 0x17b650 (Ghidra 0x18b650)
 //   CStargateTeamDM::EndRound     nm 0x17b77c (Ghidra 0x18b77c)
 //   PlayMusic(int)                nm 0x17b32c (Ghidra 0x18b32c)
@@ -767,8 +767,9 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 					iRespawn = 1;
 				// ref: respawn only dead OBSERVERS; the mp_respawntime
 				// delay applies only in modes >= 1 (mode 0 respawns at
-				// once). Ref +0xc7c is PlayerDeathThink's m_fDeadTime —
-				// m_flSgtcDeathTime was a mislabel (that offset IS m_fDeadTime).
+				// once). Ref +0xc7c is PlayerDeathThink's m_fDeadTime;
+				// the old m_flSgtcDeathTime member was a mislabel of this
+				// offset and has been deleted.
 				if( !pPlayer->IsAlive() && pPlayer->IsObserver() &&
 					( sgtc_GameModeSet == 0 ||
 						flNow - iRespawn > pPlayer->m_fDeadTime ) )
@@ -785,7 +786,7 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 }
 
 // ---------------------------------------------------------------------------
-// CStargateTeamCP::PlayerThink — nm 0x18008c (Ghidra 0x19008c).
+// CStargateTeamCP::PlayerThink — nm 0x17008c (Ghidra 0x18008c).
 // Shares the DM env/death-cam/menu frame; diverges in the team/ticket block
 // (capture types 2/4 gate team-lock + respawn), no DM supergun branch.
 // ---------------------------------------------------------------------------
@@ -845,7 +846,7 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		SGTC_GiveFromMenu( pPlayer );
 	}
 
-	// ref CP PlayerThink @0x19008c: !IsAlive && !IsObserver &&
+	// ref CP PlayerThink @0x18008c: !IsAlive && !IsObserver &&
 	// deadflag == DEAD_DEAD (pev+0x170 == 2) -> StartDeathCam. NOT pev->team.
 	if( !pPlayer->IsAlive() && !pPlayer->IsObserver() &&
 		pPlayer->pev->deadflag == DEAD_DEAD )
@@ -877,7 +878,7 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		}
 	}
 
-	// ref CP PlayerThink @0x19008c gate: skip only when the 1s tick is due OR
+	// ref CP PlayerThink @0x18008c gate: skip only when the 1s tick is due OR
 	// the player is alive — observers and dead players consume below.
 	if( flNow > pPlayer->m_flSgtcTeamsTick && !pPlayer->IsAlive() )
 	{
@@ -942,7 +943,7 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 
 // ---------------------------------------------------------------------------
 // SGTC_NewRoundCommon — the ~700-line shared body of both NewRound variants
-// (ref nm 0x184f42 / 0x187b34): entity reset, corpse clear, round state
+// (ref nm 0x184f42 / 0x177b34): entity reset, corpse clear, round state
 // commit, key/objective restore, per-player re-team + respawn, tournament
 // fan-out, skulls, ticket broadcast and the ref's virtual +0x120 tail call.
 // bCaptureMode selects the CP-only divergences.
@@ -1404,7 +1405,7 @@ void CStargateTeamDM::NewRound( void )
 }
 
 // ---------------------------------------------------------------------------
-// CStargateTeamCP::NewRound — nm 0x187b34 (Ghidra 0x197b34).
+// CStargateTeamCP::NewRound — nm 0x177b34 (Ghidra 0x187b34).
 // CP divergences: no mode-vote block, zone_capture + info_cap_rules reads
 // (teamed/type), tickets zeroed unless type 4, type-driven round windows and
 // 0x934/0x9ac per-player state in the loop.
@@ -1464,7 +1465,7 @@ void CStargateTeamCP::NewRound( void )
 }
 
 // ---------------------------------------------------------------------------
-// PlayerKilled additions — nm 0x18fb4a (Ghidra 0x19fb4a).
+// PlayerKilled additions — nm 0x17fb4a (Ghidra 0x18fb4a).
 // Ref order: Penalty FIRST, then killpoints/vicpoints scoring, ticket
 // decrement + broadcast for GameModeSet 1/3/4, and — only when
 // !m_bDisableDeathPenalty (ref this+0x10) — stock PlayerKilled + RecountTeams.
