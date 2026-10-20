@@ -782,7 +782,6 @@ int CHudSgtc::Init( void )
 	gEngfuncs.pfnRegisterVariable( "view_lowvis", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_radar", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_portraits", "0", FCVAR_ARCHIVE );
-	gEngfuncs.pfnRegisterVariable( "view_seeownport", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnAddCommand( "votecastmenu", SGTC_VoteCastMenu_f );
 	SGTC_InitPortraitSlots( this );
 	SGTC_InitProgressSlotX( this );
@@ -1303,7 +1302,9 @@ static void SGTC_UpdatePortraitSlot( CHudSgtc *hud, int spr, float hpPct, int te
 	}
 }
 
-// ref FUN_10072923 — portrait sprite id (1..10) → hud sprite name.
+// ref FUN_10072923 — portrait avatar id (0..9) → hud sprite name. The
+// server sends the 0-based index in AddPortrait's trailing byte (id=0 on
+// SG-1 → "oneill"); spr is the HSPRITE handle, not the selector.
 static const char *SGTC_PortraitAvatarSprite( int id )
 {
 	static const char *const kTable[] =
@@ -1311,9 +1312,9 @@ static const char *SGTC_PortraitAvatarSprite( int id )
 		"oneill", "carter", "jackson", "tealc", "commander",
 		"systemlord", "anubis", "goauld3", "snakegoauld", "horus",
 	};
-	if( id < 1 || id > 10 )
+	if( id < 0 || id > 9 )
 		return "inconnu";
-	return kTable[id - 1];
+	return kTable[id];
 }
 
 // ref FUN_100772f2 — packed color id decode @0x100776c8..0x1007777e (threshold chain).
@@ -1501,6 +1502,26 @@ int CHudSgtc::Draw( float flTime )
 		}
 	}
 
+	// ref FUN_100736d0 — the local player's own cell lives in the bottom-right
+	// hud_right plate, drawn separately from the top strip (which column-
+	// excludes it). Face only: avatar sprite centred in the plate's upper
+	// cell, no name/HP bar. MsgFunc_AddPortrait stores m_iPortraitSprite /
+	// m_iPortraitId when the slot is ours.
+	if( m_iPortraitSprite != 0 && m_iPortraitEnt != 0 )
+	{
+		const char *own = SGTC_PortraitAvatarSprite( m_iPortraitId );
+		wrect_t av;
+		if( SGTC_Sprite( own, &av ) )
+		{
+			const int aw = av.right - av.left;
+			const int ah = av.bottom - av.top;
+			const int cx = ScreenWidth - 0xc6 + 0x90;	// plate upper-cell centre
+			const int cy = ScreenHeight - 0xa1 + 0x2e;
+			SPR_Set( gHUD.GetSprite( gHUD.GetSpriteIndex( own ) ), 0xa8, 0xd3, 0xff );
+			SPR_DrawAdditive( 0, cx - aw / 2, cy - ah / 2, &av );
+		}
+	}
+
 	// ref @0x100737e0 Draw — life/armor/stamn vertical needles are NOT drawn by ref's Draw:
 	// ref Draw has no Draw calls for the life_bar/armor_bar/stamn_bar handles (+0x1ce8/+0x1ce0/+0x1cf0
 	// sprite-table entries @0x100bba2c/0x100bba20/0x100bba38); the live values feed the Win32/VGUI
@@ -1563,7 +1584,10 @@ int CHudSgtc::Draw( float flTime )
 
 		SGTC_ExpirePortraitSlots( this );
 
-		cvar_t *cvSeeOwn = SGTC_Cvar( "view_seeownport" );
+		// ref @0x10073c47 — the own cell is column-excluded unconditionally
+		// (DAT_100f134c[i] != DAT_100f21cc): the local player never appears in
+		// the top strip; the ref has no "view_seeownport" cvar, that gate was
+		// a port invention that left a black own-cell at top-right.
 		int col = 0;
 		int lastPx = 0;
 		for( int i = 0; i < SGTC_PORTRAIT_SLOTS; i++ )
@@ -1578,7 +1602,7 @@ int CHudSgtc::Draw( float flTime )
 				continue;
 			if( m_iPortraitSlotTeam[i] != m_iPortraitActiveTeam )
 				continue;
-			if( m_iPortraitSlotEnt[i] == m_iPortraitEnt && cvSeeOwn && cvSeeOwn->value != 0.0f )
+			if( m_iPortraitSlotEnt[i] == m_iPortraitEnt )
 				continue;
 
 			col++;
