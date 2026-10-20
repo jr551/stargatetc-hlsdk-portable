@@ -162,6 +162,7 @@ cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };
 
 // ref ClientCommand 'classe' reads these cvar_t blobs live (@0x213420
 // autobalance, @0x2135d8 mp_altclasslimiter, @0x213600..0x2136b4 class caps):
+cvar_t sgtc_cvar_resetround = { "mp_resetround", "0", FCVAR_SERVER };	// ref resetround @0x21340c (Think pulse)
 cvar_t sgtc_cvar_autobalance = { "mp_autobalance", "2", FCVAR_SERVER };	// ref autobalance @0x213420
 cvar_t sgtc_cvar_classlimitmodel = { "mp_altclasslimiter", "0", FCVAR_SERVER };	// ref classlimitmodel @0x2135d8
 cvar_t sgtc_cvar_max_syslord = { "max_syslord", "1", FCVAR_SERVER };	// ref @0x213650
@@ -243,6 +244,7 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_wepselmode );
 	CVAR_REGISTER( &sgtc_cvar_freeguns );
 	CVAR_REGISTER( &sgtc_cvar_attackcountdown );
+	CVAR_REGISTER( &sgtc_cvar_resetround );
 	CVAR_REGISTER( &sgtc_cvar_autobalance );
 	CVAR_REGISTER( &sgtc_cvar_classlimitmodel );
 	CVAR_REGISTER( &sgtc_cvar_max_syslord );

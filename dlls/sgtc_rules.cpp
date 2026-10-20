@@ -2137,6 +2137,25 @@ void CStargateTeamDM::UpdateClassCount( void )
 void CStargateTeamDM::Think( void )
 {
 	CHalfLifeTeamplay::Think();
+
+	// ref Think @0x1929ce: resetround before most round guards (no m_bRoundOver skip).
+	float flResetRound = CVAR_GET_FLOAT( "mp_resetround" );
+	if( flResetRound > 0.0f )
+	{
+		if( flResetRound > 1.0f )
+		{
+			int iTorri = GetTeamIndex( "Torri" );
+			int iGoauld = GetTeamIndex( "Goa'uld" );
+			if( iTorri >= 0 )
+				m_iSGTCTeamScores[iTorri] = 0;
+			if( iGoauld >= 0 )
+				m_iSGTCTeamScores[iGoauld] = 0;
+		}
+		EndRound();
+		CVAR_SET_FLOAT( "mp_resetround", 0.0f );
+		return;
+	}
+
 	if( m_bRoundOver )
 		return;
 
