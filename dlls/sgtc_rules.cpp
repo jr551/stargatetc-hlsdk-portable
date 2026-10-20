@@ -211,6 +211,8 @@ extern int sgtc_G_players_last;			// sgtc_round.cpp (ref BSS 0x2147bc)
 extern int sgtc_T_players_last;			// sgtc_round.cpp (ref BSS 0x21401c)
 extern int sgtc_SendPL;					// sgtc_round.cpp (ref m_SendPL)
 extern int sgtc_type;	// sgtc_token.cpp (ref BSS type @0x236588)
+extern int sgtc_G_tickets;	// sgtc_round.cpp (ref G_tickets BSS 0x236880)
+extern int sgtc_T_tickets;	// sgtc_round.cpp (ref T_tickets BSS 0x236884)
 extern float sgtc_roundstart;	// sgtc_round.cpp (rules this+0x72c mirror)
 extern cvar_t sgtc_cvar_wepselmode;		// sgtc_round.cpp (ref weaponsel @0x223484)
 extern cvar_t sgtc_cvar_freeguns;		// sgtc_round.cpp (ref freeguns @0x2238f8)
@@ -2207,6 +2209,38 @@ void CStargateTeamDM::Think( void )
 	float flTimeLimit = CVAR_GET_FLOAT( "mp_timelimit" ) * 60;
 	if( flTimeLimit != 0 && gpGlobals->time >= flTimeLimit )
 		EndRound();
+}
+
+void CStargateTeamCP::Think( void )
+{
+	// ref CStargateTeamCP::Think @0x1853e8 — shared resetround block plus type==4
+	// ticket/side reset (vtable+0x124 = InverseSpawns when rules+0x734==1).
+	float flResetRound = CVAR_GET_FLOAT( "mp_resetround" );
+	if( flResetRound > 0.0f )
+	{
+		if( flResetRound > 1.0f )
+		{
+			int iTorri = GetTeamIndex( "Torri" );
+			int iGoauld = GetTeamIndex( "Goa'uld" );
+			if( iTorri >= 0 )
+				m_iSGTCTeamScores[iTorri] = 0;
+			if( iGoauld >= 0 )
+				m_iSGTCTeamScores[iGoauld] = 0;
+		}
+		if( sgtc_type == 4 )
+		{
+			if( m_iSgtcCPSide == 1 )
+				InverseSpawns();
+			m_iSgtcCPSide = 0;
+			sgtc_G_tickets = 0;
+			sgtc_T_tickets = 0;
+		}
+		EndRound();
+		CVAR_SET_FLOAT( "mp_resetround", 0.0f );
+		return;
+	}
+
+	CStargateTeamDM::Think();
 }
 
 // ===========================================================================

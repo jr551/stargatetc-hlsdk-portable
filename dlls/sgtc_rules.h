@@ -152,6 +152,7 @@ class CStargateTeamCP : public CStargateTeamDM
 public:
 	CStargateTeamCP( void );
 	const char *GetGameDescription( void ) override { return "StargateTC-CTP"; }
+	void Think( void ) override;	// ref @0x1853e8 — resetround type-4 ticket tail
 	void InverseSpawns( void );
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
 	void PlayerThink( CBasePlayer *pPlayer ) override;
