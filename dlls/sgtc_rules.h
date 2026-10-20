@@ -129,6 +129,7 @@ protected:
 	void SGTC_SendTeamNames( CBasePlayer *pPlayer );
 	edict_t *SGTC_FindTeamSpawn( const char *pszClassname );
 	void SGTC_NewRoundCommon( BOOL bCaptureMode );	// shared NewRound body (sgtc_round.cpp)
+	void SGTC_ThinkPlayMusic( void );	// ref Think @0x1945b7..0x194b2b PlayMusic paths
 
 	char m_szSGTCTeams[SGTC_MAX_SGTC_TEAMS][SGTC_TEAMNAME_LEN];
 	int m_iSGTCTeamScores[SGTC_MAX_SGTC_TEAMS];
@@ -139,7 +140,10 @@ protected:
 	float m_flSgtcRoundTime;	// ref +0x728: round duration (s)
 	float m_flSgtcRoundEnd;		// ref +0x724: round end tick
 	int m_iSgtcRoundTicks;		// ref +0x73c: Goal guard + NewRound zero (restart counter)
-	int m_iSgtcFirstTicks;		// ref +0x750: NewRound writes -5 (0xfffffffb)
+	float m_flSgtcRoundTickStart;	// ref +0x744: elimination stinger arm time
+	int m_iSgtcWinPending;		// ref +0x74c: set when a lone team remains
+	int m_iSgtcWinScoreSide;	// ref +0x754: 1=Torri / 2=Goa'uld bonus before stinger
+	int m_iSgtcFirstTicks;		// ref +0x750: winner team index (0/1) or -5 sentinel
 	int m_iSgtcEmptyTeams;		// ref +0x758: 0 both/G/T=1/2/3 empty-teams state
 	int m_iSgtcFocusedBucket;	// ref +0x75c: 0 none / 1 one side / 2 both focused
 	int m_iSgtcAutoBalance;		// ref +0x768: 0 none, 1 ->T light, 2 ->G light

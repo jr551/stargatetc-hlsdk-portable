@@ -455,6 +455,170 @@ void CStargateTeamDM::Goal( int iTeam )
 }
 
 // ---------------------------------------------------------------------------
+// Think PlayMusic paths — ref CStargateTeamDM::Think @0x1929ce (stingers only).
+// Mode 0 elimination: @0x1945b7..0x194642 (endtround +4s). Modes 1/4 tickets:
+// @0x194a07..0x194b2b (endtround +6s). Goal() keeps separate @0x18b650 paths.
+// ---------------------------------------------------------------------------
+void CStargateTeamDM::SGTC_ThinkPlayMusic( void )
+{
+	if( sgtc_GameModeSet == 0 )
+	{
+		int totalClients = 0;
+		int aliveTeamIdx[32];
+		int presentTeamIdx[32];
+		int nAliveTeams = 0;
+		int nPresentTeams = 0;
+		for( int t = 0; t < 32; t++ )
+		{
+			aliveTeamIdx[t] = -5;
+			presentTeamIdx[t] = -5;
+		}
+
+		for( int i = 1; i <= gpGlobals->maxClients; i++ )
+		{
+			CBasePlayer *pPlayer = (CBasePlayer *)UTIL_PlayerByIndex( i );
+			if( !pPlayer || !IsValidTeam( pPlayer->TeamID() ) )
+				continue;
+			totalClients++;
+			if( !pPlayer->IsAlive() || pPlayer->m_bSgtcBadGuy )
+				continue;
+
+			int iTeam = GetTeamIndex( pPlayer->TeamID() );
+			if( iTeam < 0 )
+				continue;
+
+			BOOL bNewAlive = TRUE;
+			for( int a = 0; a < nAliveTeams; a++ )
+			{
+				if( aliveTeamIdx[a] == iTeam )
+				{
+					bNewAlive = FALSE;
+					break;
+				}
+			}
+			if( bNewAlive )
+				aliveTeamIdx[nAliveTeams++] = iTeam;
+
+			BOOL bNewPresent = TRUE;
+			for( int p = 0; p < nPresentTeams; p++ )
+			{
+				if( presentTeamIdx[p] == iTeam )
+				{
+					bNewPresent = FALSE;
+					break;
+				}
+			}
+			if( bNewPresent )
+				presentTeamIdx[nPresentTeams++] = iTeam;
+		}
+
+		if( nPresentTeams < 2 && m_bRoundOver != 0 )
+			m_bRoundOver = 1;
+		if( nPresentTeams > 1 )
+			m_bRoundOver = 2;
+
+		if( m_bRoundOver == 1 && nAliveTeams > 1 )
+		{
+			NewRound();
+			return;
+		}
+
+		if( ( m_bRoundOver < 2 || nAliveTeams > 1 ) &&
+			( nAliveTeams != 0 || totalClients == 0 ) )
+		{
+			if( m_iSgtcWinScoreSide == 0 )
+				m_iSgtcRoundTicks = 0;
+		}
+		else
+		{
+			if( nAliveTeams != 0 )
+			{
+				m_iSgtcFirstTicks = aliveTeamIdx[0];
+				m_iSgtcWinPending = 1;
+			}
+			if( m_iSgtcRoundTicks == 0 )
+			{
+				m_flSgtcRoundTickStart = gpGlobals->time;
+				m_iSgtcRoundTicks = 1;
+			}
+		}
+
+		if( m_iSgtcRoundTicks != 0 &&
+			gpGlobals->time - m_flSgtcRoundTickStart < 5.0f &&
+			m_flSgtcRoundTime + ( gpGlobals->time - m_flSgtcRoundEnd ) > 20.0f )
+		{
+			if( m_iSgtcWinScoreSide == 1 )
+				m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+			else if( m_iSgtcWinScoreSide == 2 )
+				m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+
+			if( m_iSgtcWinPending == 0 || m_iSgtcFirstTicks == -5 )
+			{
+				if( sgtc_hasplayed == 0 )
+				{
+					SGTC_PlayMusic( 2 );
+					sgtc_endtround = gpGlobals->time + 4.0f;
+					sgtc_hasplayed = 1;
+				}
+			}
+			else if( sgtc_hasplayed == 0 )
+			{
+				if( m_iSgtcFirstTicks == 0 )
+				{
+					sgtc_endtround = gpGlobals->time + 4.0f;
+					m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+					SGTC_PlayMusic( 0 );
+				}
+				if( m_iSgtcFirstTicks == 1 )
+				{
+					sgtc_endtround = gpGlobals->time + 4.0f;
+					m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+					SGTC_PlayMusic( 1 );
+				}
+				sgtc_hasplayed = 1;
+			}
+		}
+	}
+
+	if( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 4 )
+	{
+		m_flSgtcRoundEnd = gpGlobals->time + 599.0f;
+		m_flSgtcRoundTime = 599.0f;
+
+		if( sgtc_T_players < 1 && sgtc_T_tickets < 1 )
+		{
+			if( sgtc_hasplayed == 0 )
+			{
+				SGTC_PlayMusic( 1 );
+				sgtc_endtround = gpGlobals->time + 6.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+			}
+			sgtc_hasplayed = 1;
+		}
+		if( sgtc_G_players < 1 && sgtc_G_tickets < 1 )
+		{
+			if( sgtc_hasplayed == 0 )
+			{
+				SGTC_PlayMusic( 0 );
+				sgtc_endtround = gpGlobals->time + 6.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+			}
+			sgtc_hasplayed = 1;
+		}
+		if( sgtc_G_players < 1 && sgtc_T_players < 1 &&
+			sgtc_G_tickets < 1 && sgtc_T_tickets < 1 )
+		{
+			if( sgtc_hasplayed == 0 )
+			{
+				SGTC_PlayMusic( 2 );
+				sgtc_endtround = gpGlobals->time + 6.0f;
+			}
+			sgtc_hasplayed = 1;
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // NewRound body helper — nm 0x184f42 shared tail (Ghidra 0x194f42).
 // ---------------------------------------------------------------------------
 static void SGTC_NewRoundStripGroundWeapons( void )
@@ -1129,6 +1293,9 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	m_bRoundOver = FALSE;
 	// ref writes: +0x750 = -5 (0xfffffffb), +0x74c = 0, +0x73c = 0, +0x754 = 0.
 	m_iSgtcFirstTicks = -5;
+	m_iSgtcWinPending = 0;
+	m_iSgtcWinScoreSide = 0;
+	m_flSgtcRoundTickStart = 0.0f;
 	m_iSgtcRoundTicks = 0;
 	// ref: LastKeyPlace = firstplace (BSS 0x2368e0)
 	{

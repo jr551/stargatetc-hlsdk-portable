@@ -2230,6 +2230,8 @@ void CStargateTeamDM::Think( void )
 	if( keys > 1 )
 		ALERT( at_console, "GameRule: More than one player has a key!! Total %d\n", keys );
 
+	SGTC_ThinkPlayMusic();	// ref Think @0x1945b7..0x194b2b (ticket + elimination stingers)
+
 	// ref Think @0x1929ce: goal deadline (endtround + hasplayed) and the
 	// per-round member deadline (this+0x724) end the round; mp_timelimit
 	// only gates entry when no mode override holds.
