@@ -479,6 +479,23 @@ void SGTC_ThinkMpTimelimitResetTickets( void )
 	sgtc_T_tickets = sgtc_G_tickets;
 }
 
+// ref Think @0x1929ce: mp_timeleft cvar refresh at end of gated main body only.
+void SGTC_ThinkRefreshTimeleftCvar( void )
+{
+	extern cvar_t timeleft;
+
+	static int s_last_time;
+	float flTimeLimit = CVAR_GET_FLOAT( "mp_timelimit" ) * 60.0f;
+	int iRemain = 0;
+	if( flTimeLimit != 0.0f )
+		iRemain = SGTC_Round_roundf( flTimeLimit - gpGlobals->time );
+
+	if( timeleft.value != (float)s_last_time )
+		g_engfuncs.pfnCvar_DirectSet( &timeleft, UTIL_VarArgs( "%i", iRemain ) );
+
+	s_last_time = iRemain;
+}
+
 // ---------------------------------------------------------------------------
 // Think PlayMusic paths — ref CStargateTeamDM::Think @0x1929ce (stingers only).
 // Mode 0 elimination: @0x1945b7..0x194642 (endtround +4s). Modes 1/4 tickets:

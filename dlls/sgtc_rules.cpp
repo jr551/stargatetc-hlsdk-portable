@@ -243,6 +243,7 @@ extern char sgtc_hasplayed;				// sgtc_round.cpp — BSS 0x2368f1
 extern cvar_t sgtc_cvar_tickets;			// sgtc_round.cpp (ref tickets @0x2133f8)
 BOOL SGTC_ThinkRunsMainRoundBody( void );	// ref Think mp_timelimit gate @0x1929ce
 void SGTC_ThinkMpTimelimitResetTickets( void );
+void SGTC_ThinkRefreshTimeleftCvar( void );
 
 // Team spawn classname tables (rodata 0x1d7997 block ordering).
 static const char *const s_SGTCDMSpawns[SGTC_MAX_SGTC_TEAMS] =
@@ -2246,6 +2247,7 @@ void CStargateTeamDM::Think( void )
 			EndRound();
 			return;
 		}
+		SGTC_ThinkRefreshTimeleftCvar();	// ref @0x1929ce local_bc / Think()::last_time
 	}
 	else
 	{
