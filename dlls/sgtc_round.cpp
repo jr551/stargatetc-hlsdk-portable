@@ -38,6 +38,13 @@
 #include "sgtc_misc.h" // CEntSpawn::Event
 #include "sgtc_lanceproj.h"
 
+// ref NewRound sweep: CSatchelCharge::Deactivate @nm 0x155a1c (pev+0x10c=0, UTIL_Remove)
+class CSatchelCharge : public CGrenade
+{
+public:
+	void Deactivate( void );
+};
+
 extern DLL_GLOBAL BOOL g_fGameOver;
 extern void respawn( entvars_t *pev, BOOL fCopyCorpse ); // player.cpp
 extern int gmsgScoreInfo;
@@ -477,6 +484,16 @@ static void SGTC_NewRoundRemoveCorpseControllers( void )
 	}
 }
 
+static void SGTC_NewRoundRemoveSatchels( void )
+{
+	CBaseEntity *pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "monster_satchel" ) ) != NULL )
+	{
+		((CSatchelCharge *)pEnt)->Deactivate();
+		pEnt = NULL;
+	}
+}
+
 static void SGTC_NewRoundInitEntities( void )
 {
 	// ref NewRound tail (Ghidra 0x194f42) — Reset-style thinkers, then
@@ -529,7 +546,7 @@ static void SGTC_NewRoundInitEntities( void )
 	SGTC_NewRoundRemoveClass( "monster_tac", FALSE );
 	SGTC_NewRoundRemoveClass( "monster_larve", FALSE );
 	SGTC_NewRoundRemoveClass( "monster_mine", FALSE );
-	SGTC_NewRoundRemoveClass( "monster_satchel", FALSE );
+	SGTC_NewRoundRemoveSatchels();
 	SGTC_NewRoundRemoveClass( "grenade", FALSE );
 	SGTC_NewRoundRemoveClass( "lance_proj", FALSE );
 	SGTC_NewRoundRemoveClass( "big_lance_proj", FALSE );
