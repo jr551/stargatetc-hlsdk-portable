@@ -1582,8 +1582,12 @@ int CHudSgtc::Draw( float flTime )
 
 	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 		return 0;
-	const int rx = ScreenWidth - 200;
 
+	// Shipped CHudSgtc::Draw @0x100718df: cmp ds:0x100e53f4,2 / jge 0x10073256 @0x10071960-0x10071967
+	// skips 0x1007196d-0x10073255 (not the round-timer merge @0x10073256 or ticket row @0x1007346f).
+	const bool bSgtcSlowHudPath = ( gHUD.m_iHideHUDDisplay < 2 );
+	if( bSgtcSlowHudPath )
+	{
 	// ref: hud_left (+0x1c90) IS drawn once by ref Draw — the entrance-banner ammo
 	// underlay @0x100749a3 (ported in SGTC_DrawEntranceBanners).  The full 200x168
 	// bottom-left panel below is a port keep (visual anchor; no matching ref draw).
@@ -1757,6 +1761,7 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_DrawArmorBarStrip( this );
 	SGTC_DrawLifeStrip( this );	// ref @0x10074f66 — life_bar drain strip (degenerate-gated)
 	SGTC_DrawStaminaBarStrip( this );
+	}
 
 	// ref @0x10075ff1-0x100761d7 — two-counter score row while TicketMode is active:
 	// first number [+0x60] = Ttickets, second [+0x5c] = Gtickets (port MsgFunc_Ttickets/@FUN_10076d24
