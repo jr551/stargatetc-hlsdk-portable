@@ -195,12 +195,11 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
 		return;
 
-	// P43b/P43d (2026-10-21): shipped observer clock uses alt anchor (W/2, H/10).
-	// Ref routes via HideWeapon fast path (m_iHideHUDDisplay>=2), but on this port
-	// that byte is often <2 during HUD_Redraw even when g_iUser1!=0 (live verify:
-	// SetRndTim saw hideHUD=9, DrawTimer saw alt=0). Gate alt arm on spectator
-	// state only so live-FP keeps bottom-left (server sends HideWeapon 9 to all).
-	const bool altArm = ( g_iUser1 != 0 );
+	// P43g: alt arm tracks the SetRndTim mode byte (ref +0x70), not g_iUser1 — live
+	// verify showed user1=3 at MsgFunc time but top-centre paint still missing when
+	// alt was keyed only on g_iUser1 during HUD_Redraw. Server sends mode 2 only on
+	// the IsObserver() arm (sgtc_round.cpp); mode 1 keeps bottom-left (P41 oracle).
+	const bool altArm = ( hud->m_iRoundTimerMode == 2 );
 
 	SPR_DisableScissor();
 	const int x0 = altArm ? ScreenWidth / 2 : 0x23;
@@ -1563,8 +1562,9 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 
 void CHudSgtc::DrawRoundTimer( float flTime )
 {
-	// ref @0x10075DD2 — gate is +0x16f0 (timer on) and +0x58 (ticket mode) only;
-	// no HideWeapon / HIDEHUD_ALL check on the post-list timer paint path.
+	// Mode 2 paints in Draw() fast path (ref @0x10071967 → 0x10073256).
+	if( m_iRoundTimerMode == 2 )
+		return;
 	SGTC_DrawRoundTimer( this, flTime );
 }
 
@@ -1576,6 +1576,14 @@ int CHudSgtc::Draw( float flTime )
 
 	// ref @0x100738a6 — tac FSM runs before DAT_100e9d0c body skip @0x10073ac1.
 	SGTC_RunArmorTacSlideFsm( this, flTime );
+
+	// ref HideWeapon fast path @0x10071967 → 0x10073256 — spectator SetRndTim mode 2
+	// skips slab/radar/portraits; timer paints at alt arm inside this Draw().
+	if( m_iRoundTimerMode == 2 )
+	{
+		SGTC_DrawRoundTimer( this, flTime );
+		return 0;
+	}
 
 	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 		return 0;
@@ -2308,8 +2316,9 @@ int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 	// and the shipped orig draws the observer clock top-centre (graphics_comparison
 	// P43, orig ctp_crypt '9:15'). Draw gate +0x70 != 0 treats any nonzero state as
 	// armed; port previously disarmed on state 2 -> observer clock never drawn.
+	m_iRoundTimerMode = state;
 	m_iRoundTimerOn = ( state != 0 ) ? 1 : 0;
-	if( state == 1 && m_flRoundTime > 0.0f )
+	if( ( state == 1 || state == 2 ) && m_flRoundTime > 0.0f )
 		m_iTicketModeFlag = 0; // ref draw gate +0x58==0 (@0x10075de7) on non-ticket arm
 	return 1;
 }
