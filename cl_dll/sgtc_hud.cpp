@@ -188,16 +188,14 @@ static void SGTC_BlitHudDigit( int x, int y, int digit, int r, int g, int b )
 // ref shipped FUN_100718df @0x10075d2d — [MM][2points][SS]; gate +0x16f0 && !+0x58.
 static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 {
-	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
-		return;
-
-	SPR_DisableScissor();
-
 	const float rem = hud->m_flRoundStart + hud->m_flRoundTime - gHUD.m_flTime;
 	const int w = SGTC_DigitWidth();
 	if( w <= 0 )
 		return;
+	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
+		return;
 
+	SPR_DisableScissor();
 	const int x0 = 0x23;
 	const int y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
 	const int r = 0xa8, g = 0xd3, b = 0xff;
@@ -1832,12 +1830,13 @@ void CHudSgtc::Reset( void )
 	memset( m_iRadarAlpha, 0, sizeof( m_iRadarAlpha ) );
 	m_fZatTouchActive = 0;
 	m_flZatTouchTime = 0;
+	m_flKeyTime = 0;
 	m_iHideHud = 0;
 	m_iKeyMode = 0;
-	m_flKeyTime = 0;
-	m_iRoundTimerOn = 0;	// ref +0x16f0 (setter FUN_100766dd)
-	m_flRoundTime = 0;
-	m_flRoundStart = 0;
+	// ref Reset does NOT touch +0x16f0/+0x16e8/+0x16ec: NewRnd (Reset caller) is
+	// delivered in the same packet batch AFTER SetHudRoundTime(round,1), so
+	// zeroing here disarms the timer every NewRound (observed: RT gate on=0).
+	// InitHUD disarm comes from the server's own SetHudRoundTime(0,0).
 	m_iTicketModeFlag = 0;
 	m_iTicketDockFrame = 0;
 	m_iTicketSlideOffset = 0;
