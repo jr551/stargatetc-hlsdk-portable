@@ -865,14 +865,14 @@ static void SGTC_SetWeaponIcon( CHudSgtc *hud, WEAPON *pw )
 	hud->m_rcWeaponIcon = s_rcIcon;
 }
 
-// ref FUN_10050582 — the ref Think feeder on the ref CHudAmmo: gates on
-// dead flag / suit bit (m_iWeaponBits & 0x80000000) / hideHUD bits (flags&5),
-// then feeds the ticket-dock ammo counters (+0x1704 = reserve via the ammo
-// manager's per-type count @ammoObj+0x3f94 = gWR.CountAmmo(iAmmoType),
-// +0x1708 = clip @weapon+0xa0 = WEAPON::iClip) and the weapon icon
-// (+0x1714 = weapon->+0x150 sgtcweapon HSPRITE). Crosshair-bloom tail
-// (FUN_10051180×2/FUN_100512e0/FUN_10059678 + m_fFade decay) belongs to the
-// stock crosshair path and is intentionally not ported here.
+// shipped client.dll FUN_1004e355 — CHudAmmo::Draw feeder: gates on
+// DAT_100e52c4 (menu/intermission flag), weapon-bits bit 31 (DAT_100e7710 &
+// 0x80000000) and hideHUD bits (DAT_100e53f4 & 5), then feeds the ticket-dock
+// ammo counters (reserve via FUN_1004c844 on DAT_100e13d0, clip from
+// weapon+0xa0 = WEAPON::iClip) and the weapon icon (weapon+0x148 sgtcweapon
+// HSPRITE -> FUN_10073b9d SPR_Set-equivalent). Crosshair-bloom tail
+// (FUN_1004f1c0/DAT_100e7754 + this+0x14 fade decay) belongs to the stock
+// crosshair path and is intentionally not ported here.
 void CHudSgtc::Think( void )
 {
 	if( gHUD.m_fPlayerDead )					// ref DAT_100e9bc8
