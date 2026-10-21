@@ -196,19 +196,8 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 		return;
 
 	SPR_DisableScissor();
-	// ref @0x1007190b sets layout flag=1; @0x10071960 jge @0x10073256 skips clear @0x10073252
-	// when ds:0x100e53f4 (HideWeapon byte) >= 2; @0x10073324 branches on that flag.
-	int x0, y0;
-	if( gHUD.m_iHideHUDDisplay >= 2 )
-	{
-		x0 = ScreenWidth / 2;
-		y0 = ScreenHeight / 10;
-	}
-	else
-	{
-		x0 = 0x23;
-		y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
-	}
+	const int x0 = 0x23;
+	const int y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
 	const int r = 0xa8, g = 0xd3, b = 0xff;
 	const int mins = ( rem < 0.0f ) ? 0 : (int)( rem / 60.0f );
 	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
@@ -1583,11 +1572,6 @@ int CHudSgtc::Draw( float flTime )
 	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 		return 0;
 
-	// Shipped CHudSgtc::Draw @0x100718df: cmp ds:0x100e53f4,2 / jge 0x10073256 @0x10071960-0x10071967
-	// skips 0x1007196d-0x10073255 (not the round-timer merge @0x10073256 or ticket row @0x1007346f).
-	const bool bSgtcSlowHudPath = ( gHUD.m_iHideHUDDisplay < 2 );
-	if( bSgtcSlowHudPath )
-	{
 	// ref: hud_left (+0x1c90) IS drawn once by ref Draw — the entrance-banner ammo
 	// underlay @0x100749a3 (ported in SGTC_DrawEntranceBanners).  The full 200x168
 	// bottom-left panel below is a port keep (visual anchor; no matching ref draw).
@@ -1761,7 +1745,6 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_DrawArmorBarStrip( this );
 	SGTC_DrawLifeStrip( this );	// ref @0x10074f66 — life_bar drain strip (degenerate-gated)
 	SGTC_DrawStaminaBarStrip( this );
-	}
 
 	// ref @0x10075ff1-0x100761d7 — two-counter score row while TicketMode is active:
 	// first number [+0x60] = Ttickets, second [+0x5c] = Gtickets (port MsgFunc_Ttickets/@FUN_10076d24
