@@ -20,8 +20,8 @@
 //     port: SendValueTo), +0x38 = per-player fade (port UTIL_ScreenFade).
 //   CBaseEntity vtable slot +0x128 (ground weapon strip) -> port: solid=NOT
 //     re-cache stand-in.
-//   CBaseEntity+0x4 = pev. entvars: +0x170 = pev->team, +0x168 = pev->button,
-//     +0x160 = pev->health (zone state marker).
+//   CBaseEntity+0x4 = pev. entvars: +0x160 = pev->health, +0x168 = pev->weapons,
+//     +0x170 = pev->deadflag, +0x180 = pev->button, +0x1ac = pev->team.
 
 #include "extdll.h"
 #include "util.h"
@@ -38,6 +38,7 @@
 #include "sgtc_misc.h" // CEntSpawn::Event
 #include "sgtc_lanceproj.h"
 #include "sgtc_zones.h"
+#include "sgtc_monsters.h"
 
 // ref NewRound sweep: CSatchelCharge::Deactivate @nm 0x155a1c (pev+0x10c=0, UTIL_Remove)
 class CSatchelCharge : public CGrenade
@@ -111,14 +112,22 @@ int sgtc_fadetoblack = 0;      // D 0x21342c (mp_fadetoblack — write-only)
 int sgtc_teamed = 0;           // BSS 0x23658c
 float sgtc_roundtime_official = 0.0f; // this+0x72c mirror (round start tick)
 Vector sgtc_masterkey( 0, 0, 0 ); // BSS 0x2368c8
-float sgtc_lcaptain[2] = { 0.0f, 0.0f }; // BSS 0x236890/0x236894 (T,G captain ticks)
+int sgtc_lcaptain_T = 0;	// BSS 0x236890 (ref lcaptain_T)
+int sgtc_lcaptain_G = 0;	// BSS 0x236894 (ref lcaptain_G)
+int sgtc_UnasTeam = 0;		// BSS 0x2368ec (mode 3 invisible-pick team)
 int sgtc_LastState[5];         // BSS 0x236864
 int sgtc_LastStateI[5];        // BSS 0x23686c
 int sgtc_G_players = 0;        // BSS 0x21455c — alive-team-1 count (RecountTeams)
 int sgtc_T_players = 0;        // BSS 0x20c7d0 — alive-team-2 count
 int sgtc_G_players_last = 0;   // BSS 0x2147bc — previous focused-G count
 int sgtc_T_players_last = 0;   // BSS 0x21401c — previous focused-T count
+int sgtc_G_lasty = 0;          // D 0x220ad0 — mode-2 ticket HUD latch (ref G_lasty)
+int sgtc_T_lasty = 0;          // D 0x220ad4 — mode-2 ticket HUD latch (ref T_lasty)
 int sgtc_SendPL = 0;           // BSS — ref m_SendPL (CP InitHUD arms it)
+float sgtc_KeyTime = 0.0f;      // ref BSS KeyTime (DM Think key-respawn tick)
+char sgtc_BombCarrierLatch = 0; // ref BOMBCARRIER byte latch (DM Think key block)
+float sgtc_classchecktime = 0.0f; // ref classchecktime — UpdateClassCount cadence
+float sgtc_recounttime = 0.0f;  // ref recounttime — RecountTeams/camper sweep cadence
 
 // Per-class population tallies (BSS 0x2368f4..0x236918) — refilled by
 // UpdateClassCount (vtable+0x118) and read by the classe cap switches.
@@ -159,10 +168,13 @@ cvar_t sgtc_cvar_truezat = { "mp_truezat", "0", FCVAR_SERVER };	// ref truezat @
 cvar_t sgtc_cvar_wepselmode = { "mp_wepselmode", "1", FCVAR_SERVER };	// ref weaponsel @0x223484 — spawn menu mode; ref cvar name @0x1e0f51 registers default "1" (@0x1dfabd)
 cvar_t sgtc_cvar_freeguns = { "mp_freeguns", "0", FCVAR_SERVER };		// ref freeguns @0x2238f8 — CP spawn grants all slots when >1
 cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };	// ref attackcountdown @0x22390c
+cvar_t sgtc_cvar_camperdist = { "mp_camperdistance", "400", FCVAR_SERVER };	// ref camperdist @0x223544 — cvar_t.string "400"
+cvar_t sgtc_cvar_camptime = { "mp_campertime", "30", FCVAR_SERVER };	// ref camptime @0x223558 — cvar_t.string "30"
 
 // ref ClientCommand 'classe' reads these cvar_t blobs live (@0x213420
 // autobalance, @0x2135d8 mp_altclasslimiter, @0x213600..0x2136b4 class caps):
 cvar_t sgtc_cvar_resetround = { "mp_resetround", "0", FCVAR_SERVER };	// ref resetround @0x21340c (Think pulse)
+cvar_t sgtc_cvar_roundspermap = { "mp_roundspermap", "2", FCVAR_SERVER };	// ref roundspermap @0x2133f8
 cvar_t sgtc_cvar_autobalance = { "mp_autobalance", "2", FCVAR_SERVER };	// ref autobalance @0x213420
 cvar_t sgtc_cvar_classlimitmodel = { "mp_altclasslimiter", "0", FCVAR_SERVER };	// ref classlimitmodel @0x2135d8
 cvar_t sgtc_cvar_max_syslord = { "max_syslord", "1", FCVAR_SERVER };	// ref @0x213650
@@ -244,7 +256,10 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_wepselmode );
 	CVAR_REGISTER( &sgtc_cvar_freeguns );
 	CVAR_REGISTER( &sgtc_cvar_attackcountdown );
+	CVAR_REGISTER( &sgtc_cvar_camperdist );
+	CVAR_REGISTER( &sgtc_cvar_camptime );
 	CVAR_REGISTER( &sgtc_cvar_resetround );
+	CVAR_REGISTER( &sgtc_cvar_roundspermap );
 	CVAR_REGISTER( &sgtc_cvar_autobalance );
 	CVAR_REGISTER( &sgtc_cvar_classlimitmodel );
 	CVAR_REGISTER( &sgtc_cvar_max_syslord );
@@ -451,6 +466,471 @@ void CStargateTeamDM::Goal( int iTeam )
 
 	// ref @0x18b76d: hasplayed even when iTeam is neither 1 nor 2.
 	sgtc_hasplayed = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Think mp_timelimit outer gate — ref @0x1929ce before fraglimit/PlayMusic block.
+// Main body when: no timelimit, time < limit, or GameModeSet!=0 &&
+// (GameModeSet<1 || time<=endtround || hasplayed!=1). Else: ticket reset + +0x108.
+// ---------------------------------------------------------------------------
+BOOL SGTC_ThinkRunsMainRoundBody( void )
+{
+	float flTimeLimit = CVAR_GET_FLOAT( "mp_timelimit" ) * 60.0f;
+	if( flTimeLimit == 0.0f || gpGlobals->time < flTimeLimit )
+		return TRUE;
+	if( sgtc_GameModeSet != 0 &&
+	    ( sgtc_GameModeSet < 1 || gpGlobals->time <= sgtc_endtround || sgtc_hasplayed != 1 ) )
+		return TRUE;
+	return FALSE;
+}
+
+void SGTC_ThinkMpTimelimitResetTickets( void )
+{
+	sgtc_G_tickets = SGTC_Round_intconstrain( 0, 99,
+		SGTC_Round_roundf( sgtc_cvar_tickets.value ) );
+	sgtc_T_tickets = sgtc_G_tickets;
+}
+
+// ref Think @0x1929ce: mp_timeleft cvar refresh at end of gated main body only.
+void SGTC_ThinkRefreshTimeleftCvar( void )
+{
+	extern cvar_t timeleft;
+
+	static int s_last_time;
+	float flTimeLimit = CVAR_GET_FLOAT( "mp_timelimit" ) * 60.0f;
+	int iRemain = 0;
+	if( flTimeLimit != 0.0f )
+		iRemain = SGTC_Round_roundf( flTimeLimit - gpGlobals->time );
+
+	if( timeleft.value != (float)s_last_time )
+		g_engfuncs.pfnCvar_DirectSet( &timeleft, UTIL_VarArgs( "%i", iRemain ) );
+
+	s_last_time = iRemain;
+}
+
+// ---------------------------------------------------------------------------
+// ref gpGlobals+0x98 — engine field used as captain stamp base (SetCap / Think).
+static int SGTC_GlobalsDeathCount( void )
+{
+	return *(int *)( (char *)gpGlobals + 0x98 );
+}
+
+// ref SetCap(int) @0x18b0c8 (nm 0x17b0c8).
+static void SGTC_SetCap( int iSide )
+{
+	int nTorri = 0;
+	int nGoauld = 0;
+	CBaseEntity *pEnt = NULL;
+
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+		if( !pPlayer->IsAlive() || pPlayer->IsObserver() )
+			continue;
+		if( pPlayer->pev->team == 1 )
+			nTorri++;
+		if( pPlayer->pev->team == 2 )
+			nGoauld++;
+	}
+
+	const int iPickTorri = RANDOM_LONG( 1, nTorri );
+	const int iPickGoauld = RANDOM_LONG( 1, nGoauld );
+	int iTorriSeen = 0;
+	int iGoauldSeen = 0;
+
+	pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+		if( !pPlayer->IsAlive() || pPlayer->IsObserver() )
+			continue;
+
+		if( pPlayer->pev->team == 1 && ( iSide == 1 || iSide == 3 ) )
+		{
+			iTorriSeen++;
+			if( iTorriSeen == iPickTorri )
+			{
+				pPlayer->m_bSgtcPePreset = 1;
+				sgtc_lcaptain_G = SGTC_GlobalsDeathCount() + pPlayer->entindex();
+			}
+			else
+				pPlayer->m_bSgtcPePreset = 0;
+		}
+
+		if( pPlayer->pev->team == 2 && ( iSide == 2 || iSide == 3 ) )
+		{
+			iGoauldSeen++;
+			if( iGoauldSeen == iPickGoauld )
+			{
+				sgtc_lcaptain_T = SGTC_GlobalsDeathCount() + pPlayer->entindex();
+				pPlayer->m_bSgtcPePreset = 1;
+			}
+			else
+				pPlayer->m_bSgtcPePreset = 0;
+		}
+	}
+}
+
+// ref Think @0x1929ce — GameModeSet==3 (ctp invis pick) and ==4 (captain scan).
+void CStargateTeamDM::SGTC_ThinkGameMode34Side( void )
+{
+	if( sgtc_GameModeSet == 3 && m_flSgtcUnasPickTime < gpGlobals->time )
+	{
+		BOOL bAnyInvis = FALSE;
+		CBaseEntity *pEnt = NULL;
+		while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+		{
+			CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+			if( pPlayer->m_bSnagInvisLatch || pPlayer->m_bSnagInvisFlag )
+				bAnyInvis = TRUE;
+		}
+
+		if( !bAnyInvis )
+		{
+			if( sgtc_UnasTeam == 0 )
+				sgtc_UnasTeam = RANDOM_LONG( 1, 2 );
+
+			int nOnTeam = 0;
+			pEnt = NULL;
+			while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+			{
+				CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+				if( pPlayer->pev->team == sgtc_UnasTeam )
+					nOnTeam++;
+			}
+
+			const int iPick = RANDOM_LONG( 1, nOnTeam );
+			int iSeen = 0;
+			pEnt = NULL;
+			while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+			{
+				CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+				pPlayer->m_bSnagInvisFlag = 0;
+				if( pPlayer->pev->team == sgtc_UnasTeam )
+				{
+					iSeen++;
+					if( iSeen == iPick )
+						pPlayer->m_bSnagInvisFlag = 1;
+				}
+			}
+		}
+
+		m_flSgtcUnasPickTime = gpGlobals->time + 2.0f;
+	}
+
+	if( sgtc_GameModeSet == 4 && m_flSgtcCapScanTime < gpGlobals->time )
+	{
+		int nCapTorri = 0;
+		int nCapGoauld = 0;
+		CBaseEntity *pEnt = NULL;
+		while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+		{
+			CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+			const int iStamp = SGTC_GlobalsDeathCount() + pPlayer->entindex();
+			if( pPlayer->pev->team == 1 && iStamp == sgtc_lcaptain_G )
+			{
+				pPlayer->m_bSgtcPePreset = 1;
+				nCapTorri++;
+			}
+			else if( pPlayer->pev->team == 2 && iStamp == sgtc_lcaptain_T )
+			{
+				pPlayer->m_bSgtcPePreset = 1;
+				nCapGoauld++;
+			}
+			else
+				pPlayer->m_bSgtcPePreset = 0;
+		}
+
+		if( nCapTorri != 1 && sgtc_G_players > 0 )
+			SGTC_SetCap( 1 );
+		if( nCapGoauld != 1 && sgtc_T_players > 0 )
+			SGTC_SetCap( 2 );
+
+		m_flSgtcCapScanTime = gpGlobals->time + 2.0f;
+	}
+}
+
+// Think mode 0 — ref @0x1929ce gated body: mp_fraglimit on team_scores → +0x108,
+// elimination tick, then +0x724/+0x728 → +0x38 or PlayMusic stingers (+4s endtround).
+// ---------------------------------------------------------------------------
+BOOL CStargateTeamDM::SGTC_ThinkGameMode0( void )
+{
+	extern cvar_t fraglimit;
+	extern cvar_t fragsleft;
+
+	float flFragLimit = fraglimit.value;
+	if( flFragLimit != 0.0f )
+	{
+		int iBestRemain = 9999;
+		for( int t = 0; t < m_iSGTCTeamCount; t++ )
+		{
+			if( flFragLimit <= (float)m_iSGTCTeamScores[t] )
+			{
+				GoToIntermission();
+				return TRUE;
+			}
+			int iRemain = SGTC_Round_roundf( flFragLimit - (float)m_iSGTCTeamScores[t] );
+			if( iRemain < iBestRemain )
+				iBestRemain = iRemain;
+		}
+		static int s_lastFragsRemain;
+		if( iBestRemain != s_lastFragsRemain )
+			g_engfuncs.pfnCvar_DirectSet( &fragsleft, UTIL_VarArgs( "%i", iBestRemain ) );
+		s_lastFragsRemain = iBestRemain;
+	}
+
+	int totalClients = 0;
+	int aliveTeamIdx[32];
+	int presentTeamIdx[32];
+	int nAliveTeams = 0;
+	int nPresentTeams = 0;
+	for( int t = 0; t < 32; t++ )
+	{
+		aliveTeamIdx[t] = -5;
+		presentTeamIdx[t] = -5;
+	}
+
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( !pPlayer || !IsValidTeam( pPlayer->TeamID() ) )
+			continue;
+		totalClients++;
+		if( !pPlayer->IsAlive() || pPlayer->m_bSgtcBadGuy )
+			continue;
+
+		int iTeam = GetTeamIndex( pPlayer->TeamID() );
+		if( iTeam < 0 )
+			continue;
+
+		BOOL bNewAlive = TRUE;
+		for( int a = 0; a < nAliveTeams; a++ )
+		{
+			if( aliveTeamIdx[a] == iTeam )
+			{
+				bNewAlive = FALSE;
+				break;
+			}
+		}
+		if( bNewAlive )
+			aliveTeamIdx[nAliveTeams++] = iTeam;
+
+		BOOL bNewPresent = TRUE;
+		for( int p = 0; p < nPresentTeams; p++ )
+		{
+			if( presentTeamIdx[p] == iTeam )
+			{
+				bNewPresent = FALSE;
+				break;
+			}
+		}
+		if( bNewPresent )
+			presentTeamIdx[nPresentTeams++] = iTeam;
+	}
+
+	if( nPresentTeams < 2 && m_bRoundOver != 0 )
+		m_bRoundOver = 1;
+	if( nPresentTeams > 1 )
+		m_bRoundOver = 2;
+
+	if( m_bRoundOver == 1 && nAliveTeams > 1 )
+	{
+		NewRound();
+		return FALSE;
+	}
+
+	if( ( m_bRoundOver < 2 || nAliveTeams > 1 ) &&
+		( nAliveTeams != 0 || totalClients == 0 ) )
+	{
+		if( m_iSgtcWinScoreSide == 0 )
+			m_iSgtcRoundTicks = 0;
+	}
+	else
+	{
+		if( nAliveTeams != 0 )
+		{
+			m_iSgtcFirstTicks = aliveTeamIdx[0];
+			m_iSgtcWinPending = 1;
+		}
+		if( m_iSgtcRoundTicks == 0 )
+		{
+			m_flSgtcRoundTickStart = gpGlobals->time;
+			m_iSgtcRoundTicks = 1;
+		}
+	}
+
+	const BOOL bRoundWindow =
+		( m_flSgtcRoundTime + ( gpGlobals->time - m_flSgtcRoundEnd ) > 20.0f );
+	const BOOL bRoundDue =
+		( m_flSgtcRoundEnd != 0.0f && gpGlobals->time >= m_flSgtcRoundEnd &&
+		  m_flSgtcRoundTime != 0.0f );
+	const BOOL bElimPastTick =
+		( m_iSgtcRoundTicks != 0 &&
+		  gpGlobals->time - m_flSgtcRoundTickStart > 5.0f );
+
+	if( ( bRoundDue || ( bElimPastTick && bRoundWindow ) ) )
+	{
+		EndRound();
+	}
+	else if( m_iSgtcRoundTicks != 0 &&
+		gpGlobals->time - m_flSgtcRoundTickStart < 5.0f && bRoundWindow )
+	{
+		if( m_iSgtcWinScoreSide == 1 )
+			m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+		else if( m_iSgtcWinScoreSide == 2 )
+			m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+
+		if( m_iSgtcWinPending == 0 || m_iSgtcFirstTicks == -5 )
+		{
+			if( sgtc_hasplayed == 0 )
+			{
+				SGTC_PlayMusic( 2 );
+				sgtc_endtround = gpGlobals->time + 4.0f;
+				sgtc_hasplayed = 1;
+			}
+		}
+		else if( sgtc_hasplayed == 0 )
+		{
+			if( m_iSgtcFirstTicks == 0 )
+			{
+				sgtc_endtround = gpGlobals->time + 4.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+				SGTC_PlayMusic( 0 );
+			}
+			if( m_iSgtcFirstTicks == 1 )
+			{
+				sgtc_endtround = gpGlobals->time + 4.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+				SGTC_PlayMusic( 1 );
+			}
+			sgtc_hasplayed = 1;
+		}
+	}
+
+	return FALSE;
+}
+
+// Think PlayMusic paths — ref @0x1929ce ticket stingers (modes 1/4). Mode 0 is
+// SGTC_ThinkGameMode0(). Goal() keeps separate @0x18b650 paths.
+// ---------------------------------------------------------------------------
+BOOL CStargateTeamDM::SGTC_ThinkPlayMusic( void )
+{
+	if( sgtc_GameModeSet == 0 )
+		return SGTC_ThinkGameMode0();
+
+	SGTC_ThinkGameMode34Side();
+
+	if( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 4 )
+	{
+		m_flSgtcRoundEnd = gpGlobals->time + 599.0f;
+		m_flSgtcRoundTime = 599.0f;
+
+		if( sgtc_T_players < 1 && sgtc_T_tickets < 1 )
+		{
+			if( sgtc_hasplayed == 0 )
+			{
+				SGTC_PlayMusic( 1 );
+				sgtc_endtround = gpGlobals->time + 6.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+			}
+			sgtc_hasplayed = 1;
+		}
+		if( sgtc_G_players < 1 && sgtc_G_tickets < 1 )
+		{
+			if( sgtc_hasplayed == 0 )
+			{
+				SGTC_PlayMusic( 0 );
+				sgtc_endtround = gpGlobals->time + 6.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+			}
+			sgtc_hasplayed = 1;
+		}
+		if( sgtc_G_players < 1 && sgtc_T_players < 1 &&
+			sgtc_G_tickets < 1 && sgtc_T_tickets < 1 )
+		{
+			if( sgtc_hasplayed == 0 )
+			{
+				SGTC_PlayMusic( 2 );
+				sgtc_endtround = gpGlobals->time + 6.0f;
+			}
+			sgtc_hasplayed = 1;
+		}
+	}
+	else if( sgtc_GameModeSet == 2 )
+	{
+		// ref Think @0x1929ce — mode 2 has no ticket PlayMusic stingers (Goal arms
+		// endtround); refresh round timers and latch lasty when tickets hit 100.
+		if( sgtc_G_tickets == 100 )
+			sgtc_G_lasty = 100;
+		if( sgtc_T_tickets == 100 )
+			sgtc_T_lasty = 100;
+		m_flSgtcRoundEnd = gpGlobals->time + 599.0f;
+		m_flSgtcRoundTime = 599.0f;
+	}
+	return FALSE;
+}
+
+// ---------------------------------------------------------------------------
+// Think endtround rollover — ref CStargateTeamDM::Think @0x1929ce after P10
+// stingers. Requires hasplayed==1 and gpGlobals->time >= endtround.
+// vtable +0x38 = EndRound; +0x108 = GoToIntermission (fraglimit / map end).
+// ---------------------------------------------------------------------------
+void CStargateTeamDM::SGTC_ThinkEndtroundRollover( void )
+{
+	if( gpGlobals->time < sgtc_endtround || sgtc_hasplayed != 1 )
+		return;
+
+	if( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 4 )
+	{
+		sgtc_endtround = 0.0f;
+		m_iSgtcRoundsOnMap++;
+		float flRoundsPerMap = CVAR_GET_FLOAT( "mp_roundspermap" );
+		if( flRoundsPerMap - 1.0f < (float)m_iSgtcRoundsOnMap )
+		{
+			m_iSgtcRoundsOnMap = 0;
+			sgtc_G_tickets = SGTC_Round_intconstrain( 0, 99,
+				SGTC_Round_roundf( sgtc_cvar_tickets.value ) );
+			sgtc_T_tickets = sgtc_G_tickets;
+			GoToIntermission();
+		}
+		else
+		{
+			EndRound();
+		}
+		m_iSgtcRoundsOnMap = 0;
+		return;
+	}
+
+	if( sgtc_GameModeSet == 2 )
+	{
+		sgtc_endtround = 0.0f;
+		m_iSgtcRoundsOnMap++;
+		float flRoundsPerMap = CVAR_GET_FLOAT( "mp_roundspermap" );
+		if( flRoundsPerMap - 1.0f < (float)m_iSgtcRoundsOnMap )
+		{
+			m_iSgtcRoundsOnMap = 0;
+			MESSAGE_BEGIN( MSG_ALL, gmsgGtickets );
+				WRITE_BYTE( 100 );
+			MESSAGE_END();
+			MESSAGE_BEGIN( MSG_ALL, gmsgTtickets );
+				WRITE_BYTE( 100 );
+			MESSAGE_END();
+			GoToIntermission();
+		}
+		else
+		{
+			EndRound();
+		}
+		m_iSgtcRoundsOnMap = 0;
+	}
+
+	// ref @0x1929ce — shared endtround tail for modes 0 and 2 (runs after mode-2
+	// roundspermap rollover; skipped when NewRound cleared hasplayed).
+	if( ( sgtc_GameModeSet == 0 || sgtc_GameModeSet == 2 ) && sgtc_hasplayed == 1 )
+	{
+		sgtc_endtround = 0.0f;
+		EndRound();
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -712,16 +1192,17 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// superweapons (+0x465 preset gate; the once-per-round latch rides
-	// +0xa9c — ref pev+0x168 bits 18 (IN_ALT1)/15 (IN_SCORE)).
+	// +0xa9c — ref pev+0x168 is pev->weapons, weapon-OWNERSHIP bits 18/15,
+	// not pev->button/IN_ALT1/IN_SCORE).
 	if( pPlayer->m_bSgtcPePreset && pPlayer->m_bSgtcLatchA9c != 1 )
 	{
-		if( !FBitSet( pPlayer->pev->button, IN_ALT1 ) &&
+		if( !FBitSet( pPlayer->pev->weapons, ( 1 << 18 ) ) &&
 			pPlayer->pev->team == 1 )
 		{
 			pPlayer->GiveNamedItem( "weapon_glstaff" );
 			pPlayer->m_bSgtcLatchA9c = 1;
 		}
-		else if( !FBitSet( pPlayer->pev->button, IN_SCORE ) &&
+		else if( !FBitSet( pPlayer->pev->weapons, ( 1 << 15 ) ) &&
 			pPlayer->pev->team == 2 )
 		{
 			pPlayer->GiveNamedItem( "weapon_usas" );
@@ -729,12 +1210,14 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 		}
 	}
 
-	// GiveFromMenu (0x4e5/0x4e7 + 0x4ac time gate) — ref bits 13 (IN_RELOAD)
-	// and 8 (IN_RIGHT) on pev->button. The 15s window is measured against
-	// +0x4ac (m_flSgtcMenuWindow), not +0x4b0 (the menu-10 delay).
-	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
-		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
-		( flNow > pPlayer->m_flSgtcMenuWindow + 15.0f ||
+	// GiveFromMenu (0x4e5/0x4e7 + 0x4ac time gate) — ref pev+0x168 is
+	// pev->weapons: owned-weapon bits 13 and 8 suppress the apply (same bit
+	// indexes as IN_RELOAD/IN_RIGHT, but the FIELD is weapons, not button).
+	// The 15s window is measured against +0x4ac (m_flSgtcMenuWindow), not
+	// +0x4b0 (the menu-10 delay); ref term is gpGlobals < +0x4ac + 15.0.
+	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->weapons, ( 1 << 13 ) ) &&
+		!FBitSet( pPlayer->pev->weapons, ( 1 << 8 ) ) &&
+		( flNow < pPlayer->m_flSgtcMenuWindow + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
 		SGTC_GiveFromMenu( pPlayer );
@@ -899,11 +1382,13 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// GiveFromMenu (0x4e5 + 0x4ac gate) — no supergun branch in CP.
-	// ref pev+0x168 bits 13/8 = IN_RELOAD / IN_RIGHT. The 15s window is
-	// measured against +0x4ac (m_flSgtcMenuWindow), not +0x4b0.
-	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
-		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
-		( flNow > pPlayer->m_flSgtcMenuWindow + 15.0f ||
+	// ref pev+0x168 is pev->weapons: owned-weapon bits 13/8 (same indexes as
+	// IN_RELOAD/IN_RIGHT, but the FIELD is weapons, not button). The 15s
+	// window is measured against +0x4ac (m_flSgtcMenuWindow), not +0x4b0;
+	// ref term is gpGlobals < +0x4ac + 15.0.
+	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->weapons, ( 1 << 13 ) ) &&
+		!FBitSet( pPlayer->pev->weapons, ( 1 << 8 ) ) &&
+		( flNow < pPlayer->m_flSgtcMenuWindow + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
 		SGTC_GiveFromMenu( pPlayer );
@@ -1023,6 +1508,11 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	sgtc_roundtime     = CVAR_GET_FLOAT( "mp_roundtime" );
 	sgtc_type          = 0;
 	sgtc_teamed        = 0;
+	// ref CP NewRound @0x187b34: info_cap_rules walk repopulates type/teamed
+	// after the round-state zero (port had ReadCapInfo only before common, so
+	// sgtc_type was always 0 for the player loop + PlayerSpawn TicketMode).
+	if( bCaptureMode )
+		SGTC_Rules_ReadCapInfo();
 
 	// (b) strip every ground "weapon_*" cache entity with no owner.
 	SGTC_NewRoundStripGroundWeapons();
@@ -1039,6 +1529,7 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 		sgtc_LastStateI[i] = 0;
 		sgtc_LastState[i] = 0;
 	}
+	sgtc_recounttime = gpGlobals->time + 30.0f;	// ref NewRound tail (DM+CP)
 	sgtc_round_official = 0;
 
 	// (g) tournament gate.
@@ -1128,7 +1619,11 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	m_bRoundOver = FALSE;
 	// ref writes: +0x750 = -5 (0xfffffffb), +0x74c = 0, +0x73c = 0, +0x754 = 0.
 	m_iSgtcFirstTicks = -5;
+	m_iSgtcWinPending = 0;
+	m_iSgtcWinScoreSide = 0;
+	m_flSgtcRoundTickStart = 0.0f;
 	m_iSgtcRoundTicks = 0;
+	m_iSgtcRoundsOnMap = 0;	// ref +0x730 cleared in NewRound
 	// ref: LastKeyPlace = firstplace (BSS 0x2368e0)
 	{
 		extern Vector sgtc_LastKeyPlace;
@@ -1151,10 +1646,9 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 
 	if( sgtc_GameModeSet == 4 )
 	{
-		sgtc_lcaptain[0] = 0.0f;
-		sgtc_lcaptain[1] = 0.0f;
-		// ref SetCap(3) — capture captain mode marker (lcaptain reset path)
-		m_iSgtcFirstTicks = 3;
+		sgtc_lcaptain_T = 0;
+		sgtc_lcaptain_G = 0;
+		SGTC_SetCap( 3 );	// ref NewRound tail @0x194f42 — both sides
 	}
 
 	if( sgtc_friendlyfire != 0.0f )
@@ -1328,7 +1822,9 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 		}
 		else if( sgtc_type == 2 )
 		{
-			pPlayer->SetHudRoundTime( 0, 0 );
+			// ref CP type-2 maps (ctp_crypt/frozen/lastn): arm round timer, TicketMode byte 0
+			// (was (0,0) which disarmed client +0x16f0; see .rea/rndtim_arm_rea.md).
+			pPlayer->SetHudRoundTime( (int)m_flSgtcRoundTime, 1 );
 		}
 		else
 		{
@@ -1362,7 +1858,7 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 			else if( sgtc_GameModeSet == 4 )
 				pPlayer->SendGlobalTextIndex( 20 );
 		}
-		else if( pPlayer ) // ref else: spectator HUD round time, mode 2
+		else if( pPlayer->IsObserver() ) // ref else: spectator HUD round time, mode 2
 		{
 			pPlayer->SetHudRoundTime( (int)m_flSgtcRoundTime, 2 );
 		}
@@ -1520,11 +2016,6 @@ void CStargateTeamCP::NewRound( void )
 	// flag fields; the port keeps the reset in sgtc_round via its Spawn-side
 	// accessors [ref fields +0x240/+0x244/+0x250/+0x258 mirrored there].
 		SGTC_Zones_ResetCaptureZones();
-	// info_cap_rules: teamed/type globals (m_team / "type" KeyValue).
-	// CCapInfo is TU-local to sgtc_rules.cpp; read the state through the
-	// same class keys via the exposed setter.
-		SGTC_Rules_ReadCapInfo();
-
 	SGTC_NewRoundCommon( TRUE );
 }
 
@@ -1574,12 +2065,25 @@ void CStargateTeamDM::Penalty( CBasePlayer *pVictim, entvars_t *pKillerEv )
 	}
 }
 
+static int SGTC_TournyTierFromFocusedKills( int iKills )
+{
+	int iTier = ( iKills > 4 ) ? 1 : 0;
+	if( iKills > 9 )
+		iTier = 2;
+	if( iKills > 14 )
+		iTier = 3;
+	if( iKills > 19 )
+		iTier = 4;
+	return iTier;
+}
+
 void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 	entvars_t *pKiller, entvars_t *pInflictor )
 {
 	// ref @0x18fb66: Penalty(victim, killerEv) runs FIRST, before stock.
 	Penalty( pVictim, pKiller );
 
+	CBasePlayer *pKillerPl = NULL;
 	if( pKiller )
 	{
 		CBaseEntity *pKillerEnt = CBaseEntity::Instance( pKiller );
@@ -1590,19 +2094,48 @@ void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 		if( pKillerEnt && pKillerEnt != pVictim &&
 			pKillerEnt->pev->team != pVictim->pev->team )
 		{
-			( (CBasePlayer *)pKillerEnt )->m_iNukeBonus +=
+			pKillerPl = (CBasePlayer *)pKillerEnt;
+			pKillerPl->m_iNukeBonus +=
 				SGTC_Round_roundf( sgtc_cvar_killpoints.value );
 			pVictim->m_iNukeBonus +=
 				SGTC_Round_roundf( sgtc_cvar_diepoints.value );
 		}
+
+		// ref @0x18fc20: spawn-camp window (+0x4a8) + crazymode>0 + enemy killer
+		// -> killer +0x4a4 = now+10, monster_skull at killer origin +/-500.
+		if( pKillerPl && gpGlobals->time < pVictim->m_flSpawnProxDeadline &&
+			sgtc_crazymode > 0.0f )
+		{
+			Vector vecSpot = pKillerPl->pev->origin;
+			vecSpot.x += (float)( SGTC_Round_rand( 0, 1000 ) - 500 );
+			vecSpot.y += (float)( SGTC_Round_rand( 0, 1000 ) - 500 );
+			vecSpot.z += (float)( SGTC_Round_rand( 0, 1000 ) - 500 );
+			pKillerPl->m_flSpawnCampTouch = gpGlobals->time + 10.0f;
+			CBaseEntity *pSkull = CBaseEntity::Create( "monster_skull", vecSpot,
+				pKillerPl->pev->v_angle, NULL );
+			if( pSkull )
+			{
+				((CSGTCSkull *)pSkull)->m_pSkullOwner = pKillerPl;
+				pSkull->pev->dmg = 0;	// ref pev+0x16c
+			}
+		}
 	}
 
-	// monster_skull drop on death (PlayerKilled strings).
-	CBaseEntity::Create( "monster_skull", pVictim->pev->origin,
-		pVictim->pev->angles, NULL );
+	// ref @0x18fdce: remove skulls owned by the victim (+0xc0).
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "monster_skull" ) ) != NULL )
+	{
+		if( ((CSGTCSkull *)pScan)->m_pSkullOwner == pVictim )
+			UTIL_Remove( pScan );
+	}
 
-	// ref +0x4de flag reset: the invis snag latch is cleared on death.
-	pVictim->m_bSnagInvisLatch = 0;
+	// ref @0x18fe2e: crazymode == 2.0 -> three skulls at victim origin.
+	if( sgtc_crazymode == 2.0f )
+	{
+		for( int i = 0; i < 3; i++ )
+			CBaseEntity::Create( "monster_skull", pVictim->pev->origin,
+				g_vecZero, NULL );
+	}
 
 	// ref @0x18fe70: GameModeSet 1/3/4 -> victim team ticket decrement +
 	// gmsgGtickets/gmsgTtickets WRITE_BYTE broadcasts.
@@ -1626,7 +2159,23 @@ void CStargateTeamDM::PlayerKilled( CBasePlayer *pVictim,
 	if( !m_bDisableDeathPenalty )
 	{
 		CHalfLifeMultiplay::PlayerKilled( pVictim, pKiller, pInflictor );
-		RecountTeams( TRUE );
+		UpdateGameMode( pVictim );	// ref vtable+0x34
+		RecountTeams( FALSE );		// ref RecountTeams(this, 0)
+	}
+
+	// ref @0x18ffe5: death latch for capture-zone fade (+0x464).
+	pVictim->m_bSgtcPad464 = 1;
+
+	// ref @0x19000e: tourny + round_official -> elite tier from +0x930 streak.
+	if( sgtc_tourny != 0.0f && sgtc_round_official != 0 )
+	{
+		const int iTier = SGTC_TournyTierFromFocusedKills(
+			pVictim->m_iSgtcFocusedKills );
+		if( pVictim->m_iSgtcElite < iTier )
+		{
+			pVictim->m_iSgtcElite = iTier;
+			pVictim->m_iSgtcFocusedKills = 0;
+		}
 	}
 }
 

@@ -18,6 +18,7 @@ public:
 	int VidInit( void );
 	void Think( void );
 	int Draw( float flTime );
+	void DrawRoundTimer( float flTime ); // ref @0x10075d2d — paint after full HUD list (Xash)
 	void Reset( void );
 
 	int MsgFunc_ZatTouch( const char *pszName, int iSize, void *pbuf );
@@ -52,7 +53,6 @@ public:
 	int m_iGtickets;
 	int m_iTtickets;
 	int m_iHudInfoMode;		// ref +0x54 (HudInfoMode, FUN_10076bce)
-	int m_iTicketMode;		// ref +0x58 (TicketMode msg)
 	int m_iStamina;
 	int m_iSubModel;
 	int m_iHasKey;

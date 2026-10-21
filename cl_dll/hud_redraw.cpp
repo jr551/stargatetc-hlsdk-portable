@@ -19,6 +19,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "sgtc_hud.h"
 //#include "triangleapi.h"
 
 #include "vgui_TeamFortressViewport.h"
@@ -161,6 +162,10 @@ int CHud::Redraw( float flTime, int intermission )
 
 			pList = pList->pNext;
 		}
+
+		// ref round timer @0x10075d2d — repaint after entire HUD list (Xash overpaint).
+		if( !intermission )
+			g_SgtcHud.DrawRoundTimer( flTime );
 	}
 
 	// are we in demo mode? do we need to draw the logo in the top corner?
@@ -356,7 +361,11 @@ int CHud::DrawHudNumber( int x, int y, int iFlags, int iNumber, int r, int g, in
 		}
 		else if( iFlags & ( DHN_3DIGITS | DHN_2DIGITS ) )
 		{
-			//SPR_DrawAdditive( 0, x, y, &rc );
+			if( iFlags & DHN_ZEROPAD )
+			{
+				SPR_Set( GetSprite( m_HUD_number_0 ), r, g, b );
+				SPR_DrawAdditive( 0, x, y, &GetSpriteRect( m_HUD_number_0 ) );
+			}
 			x += iWidth;
 		}
 
@@ -379,7 +388,10 @@ int CHud::DrawHudNumber( int x, int y, int iFlags, int iNumber, int r, int g, in
 
 		if( iFlags & ( DHN_3DIGITS | DHN_2DIGITS ) )
 		{
-			//SPR_DrawAdditive( 0, x, y, &rc );
+			if( iFlags & DHN_ZEROPAD )
+			{
+				SPR_DrawAdditive( 0, x, y, &GetSpriteRect( m_HUD_number_0 ) );
+			}
 			x += iWidth;
 		}
 

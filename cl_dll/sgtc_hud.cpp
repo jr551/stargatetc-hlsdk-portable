@@ -145,7 +145,8 @@ static void SGTC_DrawTicketDockPeel( CHudSgtc *hud )
 		return;
 
 	wrect_t rc = gHUD.GetSpriteRect( ammoIdx );
-	rc.bottom = rc.top + 0x12;
+	rc.right = (int)( (float)pct / 100.0f * 105.0f );	// ref @0x100757c8 — bar width = pct*1.05 (ftol)
+	rc.bottom = 0x12;									// ref @0x100757e8 — absolute 0x12, not top+0x12
 	const int tint = (int)pct + 100;
 	if( tint <= 100 )
 		return;
@@ -159,6 +160,92 @@ static void SGTC_DrawTicketDockPeel( CHudSgtc *hud )
 static int SGTC_DigitWidth( void )
 {
 	return gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
+}
+
+static int SGTC_NumberSprite( int digit )
+{
+	char name[16];
+	snprintf( name, sizeof( name ), "number_%d", digit % 10 );
+	return gHUD.GetSpriteIndex( name );
+}
+
+// ref FUN_10057b66 / shipped DrawHudNumber — additive glyph (ds:0x100ed744).
+static void SGTC_BlitHudDigit( int x, int y, int digit, int r, int g, int b )
+{
+	const int idx = SGTC_NumberSprite( digit );
+	if( idx <= 0 )
+		return;
+	// SIGSEGV @0x492b0: sprite table can still be NULL during menu-11/NewRound
+	// (hud.txt sprites not bound); guard like the separator below.
+	const HSPRITE h = gHUD.GetSprite( idx );
+	const wrect_t *rc = &gHUD.GetSpriteRect( idx );
+	if( !h || !rc )
+		return;
+	SPR_Set( h, r, g, b );
+	SPR_DrawAdditive( 0, x, y, rc );
+}
+
+// ref shipped FUN_100718df @0x10075d2d — [MM][2points][SS]; gate +0x16f0 && !+0x58.
+static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
+{
+	const float rem = hud->m_flRoundStart + hud->m_flRoundTime - gHUD.m_flTime;
+	const int w = SGTC_DigitWidth();
+	if( w <= 0 )
+		return;
+	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
+		return;
+
+	// P43b (2026-10-21): shipped CHudSgtc::Draw @0x100718df takes the HideWeapon
+	// fast path (ds:0x100e53f4 >= 2, the m_iHideHUDDisplay byte) for OBSERVERS —
+	// skips the slab and draws the timer at the ALT anchor (x0=ScreenWidth/2,
+	// y0=ScreenHeight/10) with layout flag 1 instead of the bottom-left arm.
+	// The byte itself is 9 for live players on this port's server too, so gating
+	// on >=2 alone would wrongly relocate the live-FP timer — ref-orig resolves
+	// that via a live-player HideWeapon byte <2 which we don't emit. Gate on the
+	// observer state (g_iUser1 != 0) as well so live play keeps bottom-left.
+	const bool altArm = ( gHUD.m_iHideHUDDisplay >= 2 ) && ( g_iUser1 != 0 );
+
+	SPR_DisableScissor();
+	const int x0 = altArm ? ScreenWidth / 2 : 0x23;
+	const int y0 = altArm ? ScreenHeight / 10
+	                    : ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
+	const int r = 0xa8, g = 0xd3, b = 0xff;
+	const int mins = ( rem < 0.0f ) ? 0 : (int)( rem / 60.0f );
+	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
+
+	// Minutes — ref FUN_10057b66 flags 3 @0x10075ee5
+	int x = ( x0 + 0x12 ) - ( w * 9 ) / 4;
+	if( mins >= 10 )
+	{
+		SGTC_BlitHudDigit( x, y0, mins / 10, r, g, b );
+		x += w;
+	}
+	else
+		x += w; // DHN_2DIGITS column skip
+	SGTC_BlitHudDigit( x, y0, mins % 10, r, g, b );
+
+	// Separator — ref @0x10075f28-0x10075f97 (additive)
+	const int dotIdx = gHUD.GetSpriteIndex( "2points" );
+	if( dotIdx > 0 )
+	{
+		SPR_Set( gHUD.GetSprite( dotIdx ), r, g, b );
+		SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
+	}
+
+	// Seconds — ref flags 0xb @0x10075fa0 (DHN_ZEROPAD tens)
+	x = x0 + ( w * 3 ) / 8;
+	if( secs >= 10 )
+	{
+		SGTC_BlitHudDigit( x, y0, secs / 10, r, g, b );
+		x += w;
+	}
+	else
+	{
+		SGTC_BlitHudDigit( x, y0, 0, r, g, b ); // flag 0x8 zero pad
+		x += w;
+	}
+	SGTC_BlitHudDigit( x, y0, secs % 10, r, g, b );
+
 }
 
 static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
@@ -373,19 +460,18 @@ static void SGTC_DrawEntranceBanners( CHudSgtc *hud )
 		SPR_Set( gHUD.GetSprite( ammoIdx ), 0x7d, 0x7d, 0x7d );
 		SPR_DrawHoles( 0, 0x60, yAmmo, &rc );
 
-		// ref @0x100749a3-0x10074a18 — second draw is the hud_left sprite record
-		// (+0x1c90 handle / +0x1c94 rect) at the SAME anchor (x=0x60, y=yAmmo), with
-		// absolute rect.right = 0xc7 (@0x100749d1 store to +0x4) and rect.top = 0x9
-		// (@0x100749d8 store to +0x8).  Record field order is {left,right,top,bottom}
-		// (proven by weapon-icon block @0x1007591b-0x10075953).
+		// ref @0x100749a3-0x10074a18 — second draw is hud_left (+0x1c90/+0x1c94), not ammoline.
+		// Anchor is (x=0 @0x100749a3, y=ScreenHeight-0x9f @0x100749b0), distinct from the
+		// ammoline pass at (0x60, yAmmo @0x10074928).  Rect forced right=0xc7 (@0x100749c5)
+		// and top=9 (@0x100749d8); SPR_DrawHoles @0x10074a0b.
 		const int hlIdx = gHUD.GetSpriteIndex( "hud_left" );
 		if( hlIdx > 0 )
 		{
 			wrect_t bar = gHUD.GetSpriteRect( hlIdx );
-			bar.right = 0xc7;	// ref @0x100749d1 — absolute right edge
-			bar.top = 0x9;		// ref @0x100749d8 — absolute top
+			bar.right = 0xc7;
+			bar.top = 0x9;
 			SPR_Set( gHUD.GetSprite( hlIdx ), 0x7d, 0x7d, 0x7d );
-			SPR_DrawHoles( 0, 0x60, yAmmo, &bar );
+			SPR_DrawHoles( 0, 0, ScreenHeight - 0x9f, &bar );
 		}
 	}
 
@@ -767,6 +853,8 @@ static void SGTC_DrawAnnounceScroller( CHudSgtc *hud, float flTime )
 
 	const int frameA = 100 - minScroll;
 	const int frameH = ( lineH + lineGap ) * lineCount + 8;
+	// ref @0x10074757 — full-box fill then 2px border strips (5× FillRGBA).
+	FillRGBA( baseX, baseY - 4, maxW + 8, frameH, 0x32, 0x32, 0xff, frameA );
 	FillRGBA( baseX, baseY - 4, 2, frameH, 0x32, 0x32, 0xff, frameA );
 	FillRGBA( baseX + maxW + 6, baseY - 4, 2, frameH, 0x32, 0x32, 0xff, frameA );
 	FillRGBA( baseX + 1, baseY - 4, maxW + 6, 2, 0x32, 0x32, 0xff, frameA );
@@ -820,10 +908,13 @@ static WEAPON *SGTC_CurrentWeapon( void )
 	return ammo->m_pWeapon;
 }
 
-// ref FUN_1007671c — weapon icon update. Ref caches the resolved sprite record
-// (+0x1718) whenever the sgtcweapon HSPRITE (+0x150, loaded per-weapon by
-// FUN_1004eb4b from sprites/<name>.txt slot "sgtcweapon") changes; the port
-// resolves lazily here since SDK WEAPON has no +0x150 field. [INFERENCE]
+// shipped client.dll FUN_1004c8fb — per-weapon sprite loader called from the
+// WeapPickup copy (FUN_1004f2a0, after memcpy of the 0x15c weapon block) and
+// the slot-sweep WeaponsInit (FUN_1004c7f0). It resolves "sgtcweapon" from
+// sprites/<szName>.txt once per weapon into weapon+0x148 (HSPRITE) /
+// +0x14c..0x158 (wrect); the ammo Draw (FUN_1004e355) SPR_Sets +0x148.
+// The port resolves the same txt+key lazily on weapon switch instead — same
+// file, same key, equivalent visible icon. VERIFIED 2026-10-21 (was [INFERENCE]).
 static void SGTC_SetWeaponIcon( CHudSgtc *hud, WEAPON *pw )
 {
 	static WEAPON *s_pIconWeapon = NULL;
@@ -860,14 +951,14 @@ static void SGTC_SetWeaponIcon( CHudSgtc *hud, WEAPON *pw )
 	hud->m_rcWeaponIcon = s_rcIcon;
 }
 
-// ref FUN_10050582 — the ref Think feeder on the ref CHudAmmo: gates on
-// dead flag / suit bit (m_iWeaponBits & 0x80000000) / hideHUD bits (flags&5),
-// then feeds the ticket-dock ammo counters (+0x1704 = reserve via the ammo
-// manager's per-type count @ammoObj+0x3f94 = gWR.CountAmmo(iAmmoType),
-// +0x1708 = clip @weapon+0xa0 = WEAPON::iClip) and the weapon icon
-// (+0x1714 = weapon->+0x150 sgtcweapon HSPRITE). Crosshair-bloom tail
-// (FUN_10051180×2/FUN_100512e0/FUN_10059678 + m_fFade decay) belongs to the
-// stock crosshair path and is intentionally not ported here.
+// shipped client.dll FUN_1004e355 — CHudAmmo::Draw feeder: gates on
+// DAT_100e52c4 (menu/intermission flag), weapon-bits bit 31 (DAT_100e7710 &
+// 0x80000000) and hideHUD bits (DAT_100e53f4 & 5), then feeds the ticket-dock
+// ammo counters (reserve via FUN_1004c844 on DAT_100e13d0, clip from
+// weapon+0xa0 = WEAPON::iClip) and the weapon icon (weapon+0x148 sgtcweapon
+// HSPRITE -> FUN_10073b9d SPR_Set-equivalent). Crosshair-bloom tail
+// (FUN_1004f1c0/DAT_100e7754 + this+0x14 fade decay) belongs to the stock
+// crosshair path and is intentionally not ported here.
 void CHudSgtc::Think( void )
 {
 	if( gHUD.m_fPlayerDead )					// ref DAT_100e9bc8
@@ -1170,6 +1261,8 @@ static void SGTC_DrawRadarFull( CHudSgtc *hud, float flTime )
 	}
 }
 
+// Xash substitute: ref CHudSgtc::Draw never SPR_Draws life_bar/armor_bar/stamn_bar
+// (sprite bind only in VidInit @0x1007310e; values go to Win32 VGUI panels).
 static void SGTC_DrawBarNeedle( const char *bar, const char *needle, int x, int y, float frac )
 {
 	wrect_t rcBar, rcNeedle;
@@ -1471,6 +1564,13 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 		FillRGBA( barX, py + 0x40, barW, 2, 0, 0x82, 0, 255 );
 }
 
+void CHudSgtc::DrawRoundTimer( float flTime )
+{
+	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
+		return;
+	SGTC_DrawRoundTimer( this, flTime );
+}
+
 int CHudSgtc::Draw( float flTime )
 {
 	const int panelH = 168;
@@ -1482,7 +1582,6 @@ int CHudSgtc::Draw( float flTime )
 
 	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 		return 0;
-	const int rx = ScreenWidth - 200;
 
 	// ref: hud_left (+0x1c90) IS drawn once by ref Draw — the entrance-banner ammo
 	// underlay @0x100749a3 (ported in SGTC_DrawEntranceBanners).  The full 200x168
@@ -1547,34 +1646,6 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_DrawEntranceBanners( this );
 	SGTC_TickProgressTeamUi( this );
 	SGTC_DrawProgressTeamUi( this );
-
-	// ref @0x10075d2d — round timer [MM][2points][SS]; gate +0x16f0 != 0 && byte+0x58 == 0
-	// (@0x10075dd2/0x10075de7).  rem = (+0x16e8 + +0x16ec) - gHUD.m_flTime (@0x10075dfe-0x10075e1c).
-	if( m_iRoundTimerOn && !m_iTicketModeFlag )
-	{
-		const float rem = m_flRoundStart + m_flRoundTime - flTime;
-		const int w = SGTC_DigitWidth();
-		// ref @0x10075e9a — layout flag byte[ebp-0x14] (cleared @0x10075dc8, no writer between the
-		// clear and the test) always takes the bottom-left arm; the (W/2, H/10) arm is unreachable.
-		const int x0 = 0x23;
-		const int y0 = ScreenHeight - 0x8e;
-
-		gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO,
-				( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5, 60.0f @0x100a1e88
-
-		// ref @0x10075f28-0x10075f97 — "2points" separator dots at (x0 - w/8), tint 0xa8,0xd3,0xff.
-		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
-		if( dotIdx > 0 )
-		{
-			SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
-			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
-		}
-
-		// ref @0x10075fa0-0x10075fec — seconds = (int)rem % 0x3c, ref flags 0xb (bit 0x8 has no
-		// port DHN equivalent; 0x1|0x2 is DRAWZERO|2DIGITS) — [INFERENCE] on the 0x8 bit.
-		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
-		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS, secs, 0xa8, 0xd3, 0xff );
-	}
 
 	// ref draws portraits unconditionally (view_portraits is a no-op toggle in ref client.dll);
 	// the shared config sets view_portraits "0" yet the orig renders the portrait cell.
@@ -1694,7 +1765,7 @@ int CHudSgtc::Draw( float flTime )
 	{
 		const int w = SGTC_DigitWidth();
 		int x0 = 0x38;				// ref @0x10076089
-		const int y0 = ScreenHeight - 0x8e;	// ref @0x10076098
+		const int y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;	// ref @0x10076098
 		const int step = 0xd;			// ref @0x100760b8
 		const int drawX0 = x0 - ( w * 9 ) / 4;
 
@@ -1741,7 +1812,6 @@ void CHudSgtc::Reset( void )
 {
 	m_iGtickets = 0;
 	m_iTtickets = 0;
-	m_iTicketMode = 0;
 	m_iHudInfoMode = 0;
 	m_iStamina = 0;
 	s_iSgtcStaminaByte = 0;
@@ -1770,12 +1840,13 @@ void CHudSgtc::Reset( void )
 	memset( m_iRadarAlpha, 0, sizeof( m_iRadarAlpha ) );
 	m_fZatTouchActive = 0;
 	m_flZatTouchTime = 0;
+	m_flKeyTime = 0;
 	m_iHideHud = 0;
 	m_iKeyMode = 0;
-	m_flKeyTime = 0;
-	m_iRoundTimerOn = 0;	// ref +0x16f0 (setter FUN_100766dd)
-	m_flRoundTime = 0;
-	m_flRoundStart = 0;
+	// ref Reset does NOT touch +0x16f0/+0x16e8/+0x16ec: NewRnd (Reset caller) is
+	// delivered in the same packet batch AFTER SetHudRoundTime(round,1), so
+	// zeroing here disarms the timer every NewRound (observed: RT gate on=0).
+	// InitHUD disarm comes from the server's own SetHudRoundTime(0,0).
 	m_iTicketModeFlag = 0;
 	m_iTicketDockFrame = 0;
 	m_iTicketSlideOffset = 0;
@@ -1872,8 +1943,8 @@ int CHudSgtc::MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf )
 	g_iSgtcAnnouncePending = READ_BYTE();
 	if( g_iSgtcAnnouncePending == 0 )
 	{
-		char one = (char)concuss;
-		return gHUD.MsgFunc_Concuss( pszName, 1, &one );
+		gHUD.SetConcussEffectRaw( concuss );
+		return 1;
 	}
 	m_iFlags |= HUD_ACTIVE;
 	return 1;
@@ -2011,8 +2082,10 @@ int CHudSgtc::MsgFunc_Armor( const char *pszName, int iSize, void *pbuf )
 	{
 		m_iArmorState = 3;
 		m_iArmorTeamTint = 0;
-		m_iTacDispActive = 0; // ref DAT_100f70d0
 	}
+	// ref @0x10076b0e — sub==4 clears DAT_100f70d0 unconditionally (outside the state gate).
+	if( sub == 4 )
+		m_iTacDispActive = 0;
 	if( sub == 5 && m_iArmorState == 0 )
 	{
 		m_iArmorState = 1;
@@ -2041,10 +2114,10 @@ int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 	if( m_iProgress == 100 )
 		m_iBlipProgress = 100;
 
-	// ref FUN_10073faa @0x10073faa (the "Progress" usermsg handler) also stores
-	// byte 2 in DAT_100ddad4 (menu-12 budget), the 28 slot bytes in
-	// DAT_100dd9e4 (per-slot state 0/1/2) and the trailing byte in
-	// DAT_100ddad8 (reset request). Our server sends m_iNukeCharge /
+	// ref FUN_10076c5f (sgtc2_dll build) — the "Progress" handler also stores
+	// byte 2 in DAT_100e1b94 (menu-12 budget), the 28 slot bytes in
+	// DAT_100e1aa4 (per-slot state 0/1/2) and the trailing byte in
+	// DAT_100e1b98 (reset request). Our server sends m_iNukeCharge /
 	// m_iNukeBonus / m_iProgressTeam[28] / reset-flag in exactly that order
 	// (dlls/sgtc_player.cpp SGTC_SendProgressIfDirty).
 	{
@@ -2057,15 +2130,16 @@ int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_100770dd — Blip: type byte + 2 coords, ring slots 1..255.
+// ref shipped FUN_10074236 (via thunk @0x10070da5) — Blip: type byte + 2
+// READ_COORDs, ftol'd (NOT raw int16: FUN_100634a0 wraps the short read and the
+// result goes through __ftol → wire is the coord×8 short).
 int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
 	int type = READ_BYTE();
-	// ref FUN_100770dd — slot coords are wire int16 (×8), not READ_COORD float.
-	int rx = READ_SHORT();
-	int ry = READ_SHORT();
+	int rx = (int)READ_COORD();
+	int ry = (int)READ_COORD();
 
 	if( type == 0x32 )
 	{
@@ -2095,14 +2169,14 @@ int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+// ref FUN_10076c3d (sgtc2) / shipped hook @0x10072c40 — BEGIN_READ only; no field
+// stores (SGTC draw gates on gHUD.m_iHideHUDDisplay / ds:0x100e9d0c, not this msg).
 int CHudSgtc::MsgFunc_HideHud( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	if( iSize > 0 )
-		m_iHideHud = READ_BYTE();
-	else
-		m_iHideHud = 1;
+	for( int i = 0; i < iSize; i++ )
+		READ_BYTE();
 	return 1;
 }
 
@@ -2218,19 +2292,28 @@ int CHudSgtc::MsgFunc_TogglePor( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref @0x100771f3 — short round-time + byte state.
+// ref @0x100771f3 (sgtc2) / FUN_1007432f (shipped) — SHORT roundtime + BYTE state,
+// matching ref SetHudRoundTime @0x145494 (WRITE_SHORT then WRITE_BYTE).
 int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	int state = READ_BYTE();	// ref write order @0x1354ee: BYTE mode first
-	m_flRoundTime = (float)READ_SHORT();	// then SHORT roundtime
-	m_flRoundStart = gHUD.m_flTime;
-	if( state )
-		m_iTicketMode = state; // ref calls this vtable+0x1c
-	// ref +0x16f0 setter @0x100766dd — the round-timer message arms the Draw gate @0x10075dd2.
-	// (Ref's setter has no direct .text caller; wired here as the round-time arm point.) [INFERENCE]
-	m_iRoundTimerOn = 1;
+	m_flRoundTime = (float)READ_SHORT();	// shipped this+0x6c (FUN_100632dd)
+	int state = READ_BYTE();	// then the byte → vtbl+0x24 = FUN_10073b62
+	m_flRoundStart = gHUD.m_flTime;	// shipped this+0x68 = engine time (DAT_100e7800)
+	// shipped calls vtbl+0x24(state) -> FUN_10073b62 = this+0x70 setter, i.e.
+	// the message's state byte arms (1) AND disarms (0) the Draw gate
+	// (@0x1007325c). The setter has no direct .text caller — vtable only.
+	// VERIFIED 2026-10-21: vtbl slot 0x1009e738 = 0x10073b62 (was [INFERENCE]).
+	// ref vtbl+0x24 setter: mode 1 arms round timer; 0 disarms; 2 is spectator-only.
+	// P43b (2026-10-21): state 2 MUST arm the draw gate — server sends
+	// SetHudRoundTime(roundtime,2) to observers (sgtc_round.cpp IsObserver arm),
+	// and the shipped orig draws the observer clock top-centre (graphics_comparison
+	// P43, orig ctp_crypt '9:15'). Draw gate +0x70 != 0 treats any nonzero state as
+	// armed; port previously disarmed on state 2 -> observer clock never drawn.
+	m_iRoundTimerOn = ( state != 0 ) ? 1 : 0;
+	if( state == 1 && m_flRoundTime > 0.0f )
+		m_iTicketModeFlag = 0; // ref draw gate +0x58==0 (@0x10075de7) on non-ticket arm
 	return 1;
 }
 

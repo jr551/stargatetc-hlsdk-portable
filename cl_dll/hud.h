@@ -34,6 +34,8 @@
 #define DHN_DRAWZERO 1
 #define DHN_2DIGITS  2
 #define DHN_3DIGITS  4
+// ref shipped client.dll FUN_10057b66 — flag 0x8 draws '0' in a skipped digit column (not MINUSSIGN).
+#define DHN_ZEROPAD  8
 #define MIN_ALPHA	 100	
 
 #define		HUDELEM_ACTIVE	1
@@ -634,6 +636,8 @@ public:
 	void _cdecl MsgFunc_ViewMode( const char *pszName, int iSize, void *pbuf );
 	int _cdecl MsgFunc_SetFOV( const char *pszName,  int iSize, void *pbuf );
 	int  _cdecl MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf );
+	// ref client Concuss hook @0x100592cf — stores byte0 at gHUD+0x1c only (no dmg_concuss icon).
+	void SetConcussEffectRaw( int effect );
 
 	// Screen information
 	SCREENINFO	m_scrinfo;

@@ -205,14 +205,16 @@ void LinkUserMessages( void )
 		return;
 	}
 
+	// ref/stc_i386.so LinkUserMessages @0x132d44: SGTC prefix, stock block, SGTC suffix.
+	SGTC_LinkUserMessages_Prefix();
+
 	gmsgSelAmmo = REG_USER_MSG( "SelAmmo", sizeof(SelAmmo) );
 	gmsgCurWeapon = REG_USER_MSG( "CurWeapon", 3 );
-	gmsgGeigerRange = REG_USER_MSG( "Geiger", 1 );
+	// ref omits Geiger/Battery user messages (no gmsgGeiger/gmsgBattery in .so).
 	gmsgFlashlight = REG_USER_MSG( "Flashlight", 2 );
 	gmsgFlashBattery = REG_USER_MSG( "FlashBat", 1 );
 	gmsgHealth = REG_USER_MSG( "Health", 1 );
 	gmsgDamage = REG_USER_MSG( "Damage", 12 );
-	gmsgBattery = REG_USER_MSG( "Battery", 2);
 	gmsgTrain = REG_USER_MSG( "Train", 1 );
 	//gmsgHudText = REG_USER_MSG( "HudTextPro", -1 );
 	gmsgHudText = REG_USER_MSG( "HudText", -1 ); // we don't use the message but 3rd party addons may!
@@ -243,7 +245,7 @@ void LinkUserMessages( void )
 	gmsgStatusText = REG_USER_MSG( "StatusText", -1 );
 	gmsgStatusValue = REG_USER_MSG( "StatusValue", 3 );
 
-	SGTC_LinkUserMessages();
+	SGTC_LinkUserMessages_Suffix();
 }
 
 LINK_ENTITY_TO_CLASS( player, CBasePlayer )
@@ -914,6 +916,14 @@ void CBasePlayer::Killed( entvars_t *pevAttacker, int iGib )
 		m_pActiveItem->Holster();
 
 	g_pGameRules->PlayerKilled( this, pevAttacker, g_pevLastInflictor );
+
+	// ref CBasePlayer::Killed @0x14f560: weapon inflictor (+0x930) kill credit.
+	if( g_pevLastInflictor && pev != g_pevLastInflictor )
+	{
+		CBaseEntity *pInflictor = CBaseEntity::Instance( g_pevLastInflictor );
+		if( pInflictor && pInflictor->IsPlayer() )
+			((CBasePlayer *)pInflictor)->m_iSgtcFocusedKills++;
+	}
 
 	if( m_pTank != 0 )
 		m_pTank->Use( this, this, USE_OFF, 0 );
@@ -2418,7 +2428,7 @@ void CBasePlayer::UpdateGeigerCounter( void )
 	// send range to radition source to client
 	range = (BYTE)( m_flgeigerRange / 4 );
 
-	if( range != m_igeigerRangePrev )
+	if( gmsgGeigerRange && range != m_igeigerRangePrev )
 	{
 		m_igeigerRangePrev = range;
 
@@ -4145,10 +4155,12 @@ void CBasePlayer::UpdateClientData( void )
 			WRITE_BYTE( m_iFlashBattery );
 		MESSAGE_END();
 
-		// Vit_amiN: the geiger state could run out of sync, too
-		MESSAGE_BEGIN( MSG_ONE, gmsgGeigerRange, NULL, pev );
-			WRITE_BYTE( 0 );
-		MESSAGE_END();
+		if( gmsgGeigerRange )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgGeigerRange, NULL, pev );
+				WRITE_BYTE( 0 );
+			MESSAGE_END();
+		}
 
 		InitStatusBar();
 	}
@@ -4195,13 +4207,11 @@ void CBasePlayer::UpdateClientData( void )
 		m_iClientHealth = (int)pev->health;
 	}
 
-	if( (int)pev->armorvalue != m_iClientBattery )
+	// ref/stc_i386.so omits Battery usermsg; gmsgBattery stays 0 — do not WRITE_SHORT on id 0.
+	if( gmsgBattery && (int)pev->armorvalue != m_iClientBattery )
 	{
 		m_iClientBattery = (int)pev->armorvalue;
 
-		ASSERT( gmsgBattery > 0 );
-
-		// send "health" update message
 		MESSAGE_BEGIN( MSG_ONE, gmsgBattery, NULL, pev );
 			WRITE_SHORT( (int)pev->armorvalue );
 		MESSAGE_END();

@@ -33,6 +33,7 @@ extern void CopyToBodyQue( entvars_t *pev );
 // ref global: Elmo @0x2368f0 — byte flag set to 1 by dropkey's key spawn
 // (ref @0xda0dc MOV byte ptr).  Never read; not an edict pointer.
 char sgtc_Elmo = 0;
+char sgtc_KeyChargeLatch = 0;	// ref DAT_00246866 — DM Think key-block nuke-charge edge latch
 
 static int SGTC_SupergunsHudAux( void )	// REA: ref reads superguns cvar +0xc; read the port struct directly
 {
@@ -60,14 +61,24 @@ static const struct
 	{ "monster_satchel",   4 },
 };
 
+// ref Endo_roundto @0x1bb72c: rounds an int to its nearest hundredth — identity
+// for integer inputs; ref wraps ROUND(dx*0.1) in it before WRITE_COORD.
+static int SGTC_Endo_roundto( int v )
+{
+	return (int)floor( (double)(int)floor( (double)v * 100.0 + 0.5 ) / 100.0 + 0.5 );
+}
+
 static void SGTC_SendRadarBlip( CBasePlayer *pPlayer, int iType, int iDx, int iDy )
 {
 	if( !gmsgRadarBlip )
 		return;
 	MESSAGE_BEGIN( MSG_ONE, gmsgRadarBlip, NULL, pPlayer->edict() );
 	WRITE_BYTE( iType );
-	WRITE_COORD( (float)iDx * 0.1f );
-	WRITE_COORD( (float)iDy * 0.1f );
+	// ref @0x1456d9: WRITE_COORD(Endo_roundto(ROUND(dx*0.1))) — the wire value is
+	// the pre-decimated int (~dx/10); the client READ_COORD+ftols it back.
+	// ROUND is FISTP round-nearest (mode 0xc) → lrintf matches for all signs.
+	WRITE_COORD( (float)SGTC_Endo_roundto( (int)lrintf( (double)iDx * 0.1 ) ) );
+	WRITE_COORD( (float)SGTC_Endo_roundto( (int)lrintf( (double)iDy * 0.1 ) ) );
 	MESSAGE_END();
 }
 
@@ -94,18 +105,25 @@ static BOOL SGTC_RadarTeamVisible( CBasePlayer *pViewer, CBaseEntity *pEnt )
 	return TRUE;
 }
 
-static BOOL SGTC_RadarPassesFilters( CBasePlayer *pPlayer, CBaseEntity *pEnt, int iDx, int iDy )
+static BOOL SGTC_RadarPassesFilters( CBasePlayer *pPlayer, CBaseEntity *pEnt, int iDx, int iDy, BOOL bZPass )
 {
-	const int kHalf = 90;		// ref Endo_roundtoi(9*5*2) @0x135604
-	const float kMaxDist = 929.0f;	// cmp 0x3a1 @0x13596c
+	const int kHalf = 90;		// ref Endo_roundtoi(9*5*2) @0x135604 → Endo_roundto(9*10)
+	const int kMaxDist = 929;	// ref Endo_distance3d (Manhattan) < 0x3a2 @0x1457d0
 
 	if( pEnt == pPlayer )
 		return FALSE;
 	if( abs( iDx ) <= kHalf && abs( iDy ) <= kHalf )
 		return FALSE;
 
-	Vector vecDelta( (float)iDx, (float)iDy, pEnt->pev->origin.z - pPlayer->pev->origin.z );
-	if( vecDelta.Length() > kMaxDist )
+	// ref uses Manhattan 3d distance, NOT vecDelta.Length().
+	if( abs( iDx ) + abs( iDy ) +
+	    abs( (int)( pEnt->pev->origin.z - pPlayer->pev->origin.z ) ) > kMaxDist )
+		return FALSE;
+
+	// ref: blip only when the entity passed the info_radar_block Z window
+	// (local_d) — entity above player under the nearest overhead blocker, or
+	// below player above the nearest underfoot blocker, or exactly level.
+	if( !bZPass )
 		return FALSE;
 
 	if( !SGTC_RadarTeamVisible( pPlayer, pEnt ) )
@@ -120,6 +138,36 @@ static BOOL SGTC_RadarPassesFilters( CBasePlayer *pPlayer, CBaseEntity *pEnt, in
 	return TRUE;
 }
 
+// ref @0x1455f4..0x1456c8 — nearest info_radar_block above the player sets the
+// ceiling distance; nearest below sets the floor distance. An entity passes the
+// Z window (local_d) when it is above the player but below the blocker, or
+// below the player but above the blocker, or exactly level with the player.
+static BOOL SGTC_RadarZPass( CBasePlayer *pPlayer, CBaseEntity *pEnt )
+{
+	float distAbove = 9000.0f;	// ref local_18
+	float distBelow = 9000.0f;	// ref local_14
+
+	CBaseEntity *pBlk = NULL;
+	while( ( pBlk = UTIL_FindEntityByClassname( pBlk, "info_radar_block" ) ) != NULL )
+	{
+		const float z = pBlk->pev->origin.z;
+		if( pPlayer->pev->origin.z < z && z - pPlayer->pev->origin.z < distAbove )
+			distAbove = z - pPlayer->pev->origin.z;
+		if( z < pPlayer->pev->origin.z && pPlayer->pev->origin.z - z < distBelow )
+			distBelow = pPlayer->pev->origin.z - z;
+	}
+
+	const float ez = pEnt->pev->origin.z;
+	const float pz = pPlayer->pev->origin.z;
+	if( pz < ez && ez - pz < distAbove )
+		return TRUE;
+	if( ez < pz && pz - ez < distBelow )
+		return TRUE;
+	if( ez == pz )
+		return TRUE;
+	return FALSE;
+}
+
 // ref CBasePlayer::RadarScan @0x135592
 void CBasePlayer::SGTC_RadarScan( void )
 {
@@ -132,11 +180,8 @@ void CBasePlayer::SGTC_RadarScan( void )
 		return;
 	}
 
-	if( pev->team <= 0 )
-	{
-		m_flRadarNext = gpGlobals->time + 0.25f;
-		return;
-	}
+	// NOTE: ref has NO viewer-team early-out — a live player on team 0 still
+	// scans; the team check lives in SGTC_RadarTeamVisible (alive-entity gate).
 
 	const int nClasses = (int)( sizeof( s_radarClasses ) / sizeof( s_radarClasses[0] ) );
 	for( int i = 0; i < nClasses; i++ )
@@ -147,10 +192,11 @@ void CBasePlayer::SGTC_RadarScan( void )
 		CBaseEntity *pEnt = NULL;
 		while( ( pEnt = UTIL_FindEntityByClassname( pEnt, pszClass ) ) != NULL )
 		{
-			const int iDx = (int)( pEnt->pev->origin.x - pev->origin.x );
-			const int iDy = (int)( pEnt->pev->origin.y - pev->origin.y );
+			const int iDx = (int)lrintf( pEnt->pev->origin.x - pev->origin.x ); // ref FISTP round-nearest
+			const int iDy = (int)lrintf( pEnt->pev->origin.y - pev->origin.y );
 
-			if( !SGTC_RadarPassesFilters( this, pEnt, iDx, iDy ) )
+			if( !SGTC_RadarPassesFilters( this, pEnt, iDx, iDy,
+				SGTC_RadarZPass( this, pEnt ) ) )
 				continue;
 
 			SGTC_SendRadarBlip( this, iType, iDx, iDy );
@@ -427,6 +473,21 @@ void CBasePlayer::SGTC_SyncBombZoneHasKey( void )
 	}
 	else
 		m_bBombZoneKeyLatch = 0;
+}
+
+// ref CBasePlayer::CampWarn @0x193a4f (inside DM::Think's decompile).
+// arg 0 -> HasKey "3", else "2". Skipped entirely when MapType == 1 (CP).
+void CBasePlayer::CampWarn( int arg )
+{
+	if( g_iSgtcMapType == 1 )
+		return;
+	if( gmsgHasKey )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgHasKey, NULL, pev );
+		WRITE_BYTE( arg == 0 ? 3 : 2 );
+		WRITE_BYTE( 0 );
+		MESSAGE_END();
+	}
 }
 
 // ref ClientCommand @0xcb456 — menuselect arg <=4 arms bomb-key warn timer.
@@ -857,7 +918,7 @@ BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 			return TRUE;
 		CBaseEntity *pScan = NULL;
 		while( ( pScan = UTIL_FindEntityByClassname( pScan, "monster_skull" ) ) != NULL )
-			((CSGTCSkull *)pScan)->m_iSgtcField = 0;	// [INFERENCE] ref +0xc0
+			((CSGTCSkull *)pScan)->m_pSkullOwner = NULL;	// ref +0xc0
 		return TRUE;
 	}
 
@@ -1474,16 +1535,16 @@ static int SGTC_Endo_takefromlarger( int a, int b )
 	return a > b ? a - b : b - a;
 }
 
-// ref CBasePlayer::SetHudRoundTime(int,int) @0x125494 — MSG_ONE SetRndTim:
-// SHORT roundtime + BYTE mode, only when (roundtime,mode) changed. Ref quirk:
-// the mode field +0x4d8 is compared but never written back.
+// ref CBasePlayer::SetHudRoundTime(int,int) @0x145494 — MSG_ONE SetRndTim:
+// WRITE_SHORT(roundtime) then WRITE_BYTE(mode), only when (roundtime,mode)
+// changed. Ref quirk: the mode field +0x4d8 is compared but never written back.
 void CBasePlayer::SetHudRoundTime( int roundtime, int mode )
 {
 	if( m_iHudRoundTime != roundtime || m_iHudRoundMode != mode )
 	{
 		MESSAGE_BEGIN( MSG_ONE, gmsgSetHudRoundTime, NULL, pev );
-			WRITE_BYTE( mode );	// ref @0x1354ee: pfnWriteByte(mode) FIRST
-			WRITE_SHORT( roundtime );	// ref @0x135505: pfnWriteShort second
+			WRITE_SHORT( roundtime );	// ref @0x1454a7: DAT_00238ec8 = WRITE_SHORT FIRST
+			WRITE_BYTE( mode );		// ref @0x1454b0: DAT_00238ec0 = WRITE_BYTE second
 		MESSAGE_END();
 		m_iHudRoundTime = roundtime;
 	}
@@ -1766,9 +1827,11 @@ void CBasePlayer::Talent( void )
 				}
 				else
 				{
-					// proximity retag: <80 units, |dz| < 70 -> mode field = 2.
+					// proximity retag: ref @0x14656f cmp eax,0x95 (Endo_distance3d
+					// int result <=149) + Endo_takefromlarger(floor z) < 70.0f
+					// @0x146873 — NOT <80.
 					if( SGTC_Endo_distance3d( pev->origin,
-							pOwned->pev->origin ) < 80 &&
+							pOwned->pev->origin ) <= 149 &&
 						SGTC_Endo_takefromlarger(
 							(int)floorf( pev->origin.z ),
 							(int)floorf( pOwned->pev->origin.z ) ) < 70 )
@@ -1793,9 +1856,9 @@ void CBasePlayer::Talent( void )
 			{
 				SnagInvis();
 				UTIL_MakeVectors( pev->v_angle );
-				Vector vecStart = pev->origin +
-					gpGlobals->v_forward * 16.0f;	// [INFERENCE] scalar rodata
-				Vector vecVel = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+				Vector vecStart = pev->origin + pev->view_ofs +
+					gpGlobals->v_forward * 16.0f;	// ref @0x145b2c: origin+view_ofs+fwd*16
+				Vector vecVel = gpGlobals->v_forward * 300.0f;	// ref rodata 300.0f
 				CBaseEntity *pLarve = CBaseEntity::Create( "monster_larve", vecStart,
 					pev->v_angle, edict() );
 				if( pLarve )
@@ -1908,7 +1971,7 @@ void CBasePlayer::Talent( void )
 				if( !pOwned )
 					return;
 				if( SGTC_Endo_distance3d( pev->origin,
-						pOwned->pev->origin ) < 80 &&
+						pOwned->pev->origin ) <= 149 &&	// ref cmp eax,0x95 (was <80)
 					SGTC_Endo_takefromlarger( (int)floorf( pev->origin.z ),
 						(int)floorf( pOwned->pev->origin.z ) ) < 70 )
 				{
@@ -1933,8 +1996,9 @@ sgtc_talent_zatboom:
 	SnagInvis();
 	UTIL_MakeVectors( pev->v_angle );
 	{
-		Vector vecStart = pev->origin + gpGlobals->v_forward * 16.0f;	// [INFERENCE]
-		Vector vecVel = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+		Vector vecStart = pev->origin + pev->view_ofs +
+			gpGlobals->v_forward * 16.0f;	// ref @0x145206: origin+view_ofs+fwd*16
+		Vector vecVel = gpGlobals->v_forward * 300.0f;	// ref rodata 300.0f
 		CBaseEntity *pZat = CBaseEntity::Create( "monster_zatboom", vecStart, pev->v_angle, NULL );
 		if( pZat )
 		{

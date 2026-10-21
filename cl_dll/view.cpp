@@ -1382,8 +1382,13 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 
 	pparams->onlyClientDraw = false;
 
-	// refresh position
+	// CheckSettings normally runs from VGUI paint (≤1 Hz); run after simorg for vJumpOrigin.
 	VectorCopy( pparams->simorg, v_sim_org );
+	gHUD.m_Spectator.SyncObserverUserGlobals();
+	gHUD.m_Spectator.CheckSettings();
+	// Solo dead free cam: full-map 3D pass (orig); not paint-only CheckSettings.
+	if( g_iUser1 == OBS_ROAMING && !g_iUser2 )
+		gHUD.m_Spectator.m_pip->value = INSET_OFF;
 
 	// get old values
 	VectorCopy( pparams->cl_viewangles, v_cl_angles );
@@ -1470,17 +1475,10 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 				break;
 			case OBS_ROAMING:
 				VectorCopy( v_cl_angles, v_angles );
-				// FWGS cl.simorg can lag the server UTIL_SetOrigin on connect-dead
-				// observer (MOVETYPE_NONE); the local entity origin matches the ref
-				// observer spot and keeps the main pass inside the map PVS.
-				{
-					cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
-					const float *src = ( pl && pl->index > 0 ) ? pl->origin : v_sim_org;
-					VectorCopy( src, v_origin );
-					v_origin[2] += 28.0f;
-				}
-				// override values if director is active
-				gHUD.m_Spectator.GetDirectorCamera(v_origin, v_angles);
+				gHUD.m_Spectator.ResolveRoamingOrigin( v_origin, pparams->simorg );
+				v_origin[2] += 28.0f;
+				if( g_iUser2 != 0 )
+					gHUD.m_Spectator.GetDirectorCamera( v_origin, v_angles );
 				break;
 			case OBS_IN_EYE:
 				V_CalcNormalRefdef( pparams );
@@ -1495,8 +1493,11 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 				break;
 		}
 
-		if( gHUD.m_Spectator.m_pip->value )
-			pparams->nextView = 1;	// force a second renderer view
+		gHUD.m_Spectator.EnforceSoloInset();
+		if( gHUD.m_Spectator.m_pip->value
+			&& g_iUser2 != 0
+			&& g_iUser1 != OBS_ROAMING )
+			pparams->nextView = 1;	// ref client.dll @0x10081f64: spec_pip != 0
 
 		gHUD.m_Spectator.m_iDrawCycle = 0;
 	}
@@ -1539,6 +1540,8 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 	VectorCopy( v_cl_angles, pparams->cl_viewangles );
 	VectorCopy( v_angles, pparams->viewangles );
 	VectorCopy( v_origin, pparams->vieworg );
+
+	gHUD.m_Spectator.EnforceSoloInset();
 }
 
 void DLLEXPORT V_CalcRefdef( struct ref_params_s *pparams )
