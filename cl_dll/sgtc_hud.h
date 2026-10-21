@@ -52,7 +52,6 @@ public:
 	int m_iGtickets;
 	int m_iTtickets;
 	int m_iHudInfoMode;		// ref +0x54 (HudInfoMode, FUN_10076bce)
-	int m_iTicketMode;		// ref +0x58 (TicketMode msg)
 	int m_iStamina;
 	int m_iSubModel;
 	int m_iHasKey;

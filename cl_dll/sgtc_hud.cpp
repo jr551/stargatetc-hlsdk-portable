@@ -1757,7 +1757,6 @@ void CHudSgtc::Reset( void )
 {
 	m_iGtickets = 0;
 	m_iTtickets = 0;
-	m_iTicketMode = 0;
 	m_iHudInfoMode = 0;
 	m_iStamina = 0;
 	s_iSgtcStaminaByte = 0;
@@ -2243,13 +2242,14 @@ int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	m_flRoundTime = (float)READ_SHORT();	// ref reads the wide field first → +0x16ec/+0x6c
-	int state = READ_BYTE();	// then the byte → vtbl mode arm
-	m_flRoundStart = gHUD.m_flTime;
-	m_iTicketMode = state;	// ref calls this vtable setter unconditionally (0 disarms)
-	// ref +0x16f0 setter @0x100766dd — the round-timer message arms the Draw gate @0x10075dd2.
-	// (Ref's setter has no direct .text caller; wired here as the round-time arm point.) [INFERENCE]
-	m_iRoundTimerOn = 1;
+	m_flRoundTime = (float)READ_SHORT();	// shipped this+0x6c (FUN_100632dd)
+	int state = READ_BYTE();	// then the byte → vtbl+0x24 = FUN_10073b62
+	m_flRoundStart = gHUD.m_flTime;	// shipped this+0x68 = engine time (DAT_100e7800)
+	// shipped calls vtbl+0x24(state) -> FUN_10073b62 = this+0x70 setter, i.e.
+	// the message's state byte arms (1) AND disarms (0) the Draw gate
+	// (@0x1007325c). The setter has no direct .text caller — vtable only.
+	// VERIFIED 2026-10-21: vtbl slot 0x1009e738 = 0x10073b62 (was [INFERENCE]).
+	m_iRoundTimerOn = ( state != 0 ) ? 1 : 0;
 	return 1;
 }
 
