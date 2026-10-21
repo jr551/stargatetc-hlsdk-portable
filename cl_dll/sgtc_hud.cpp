@@ -205,21 +205,39 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 
 	if( altArm )
 	{
-		// P43i: do not gate alt arm on SGTC_DigitWidth() — observer connect can paint
-		// before hud.txt sprites bind (w==0 early-return hid the clock since P43d).
+		// P43j: orig :79 top-centre clock sits ~y=5 (cr3_top), not H/10 (~76). Xash additive
+		// digits read white on FB — use SGTC_BlitHudDigit (same as live-FP timer @0x10073256).
+		const int yAlt = 5 + gHUD.m_iHudNumbersYOffset;
 		int wAlt = SGTC_DigitWidth();
 		if( wAlt <= 0 )
 			wAlt = 16;
 		int x = ( x0 + 0x12 ) - ( wAlt * 9 ) / 4;
-		x = gHUD.DrawHudNumber( x, y0, DHN_2DIGITS, mins, r, g, b );
+		if( mins >= 10 )
+		{
+			SGTC_BlitHudDigit( x, yAlt, mins / 10, r, g, b );
+			x += wAlt;
+		}
+		else
+			x += wAlt;
+		SGTC_BlitHudDigit( x, yAlt, mins % 10, r, g, b );
 		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
 		if( dotIdx > 0 )
 		{
 			SPR_Set( gHUD.GetSprite( dotIdx ), r, g, b );
-			SPR_DrawAdditive( 0, x0 - wAlt / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
+			SPR_DrawAdditive( 0, x0 - wAlt / 8, yAlt, &gHUD.GetSpriteRect( dotIdx ) );
 		}
 		x = x0 + ( wAlt * 3 ) / 8;
-		gHUD.DrawHudNumber( x, y0, DHN_2DIGITS | DHN_ZEROPAD, secs, r, g, b );
+		if( secs >= 10 )
+		{
+			SGTC_BlitHudDigit( x, yAlt, secs / 10, r, g, b );
+			x += wAlt;
+		}
+		else
+		{
+			SGTC_BlitHudDigit( x, yAlt, 0, r, g, b );
+			x += wAlt;
+		}
+		SGTC_BlitHudDigit( x, yAlt, secs % 10, r, g, b );
 		return;
 	}
 
