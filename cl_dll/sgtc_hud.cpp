@@ -195,9 +195,20 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
 		return;
 
+	// P43b (2026-10-21): shipped CHudSgtc::Draw @0x100718df takes the HideWeapon
+	// fast path (ds:0x100e53f4 >= 2, the m_iHideHUDDisplay byte) for OBSERVERS —
+	// skips the slab and draws the timer at the ALT anchor (x0=ScreenWidth/2,
+	// y0=ScreenHeight/10) with layout flag 1 instead of the bottom-left arm.
+	// The byte itself is 9 for live players on this port's server too, so gating
+	// on >=2 alone would wrongly relocate the live-FP timer — ref-orig resolves
+	// that via a live-player HideWeapon byte <2 which we don't emit. Gate on the
+	// observer state (g_iUser1 != 0) as well so live play keeps bottom-left.
+	const bool altArm = ( gHUD.m_iHideHUDDisplay >= 2 ) && ( g_iUser1 != 0 );
+
 	SPR_DisableScissor();
-	const int x0 = 0x23;
-	const int y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
+	const int x0 = altArm ? ScreenWidth / 2 : 0x23;
+	const int y0 = altArm ? ScreenHeight / 10
+	                    : ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
 	const int r = 0xa8, g = 0xd3, b = 0xff;
 	const int mins = ( rem < 0.0f ) ? 0 : (int)( rem / 60.0f );
 	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
@@ -2295,7 +2306,12 @@ int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 	// (@0x1007325c). The setter has no direct .text caller — vtable only.
 	// VERIFIED 2026-10-21: vtbl slot 0x1009e738 = 0x10073b62 (was [INFERENCE]).
 	// ref vtbl+0x24 setter: mode 1 arms round timer; 0 disarms; 2 is spectator-only.
-	m_iRoundTimerOn = ( state == 1 ) ? 1 : 0;
+	// P43b (2026-10-21): state 2 MUST arm the draw gate — server sends
+	// SetHudRoundTime(roundtime,2) to observers (sgtc_round.cpp IsObserver arm),
+	// and the shipped orig draws the observer clock top-centre (graphics_comparison
+	// P43, orig ctp_crypt '9:15'). Draw gate +0x70 != 0 treats any nonzero state as
+	// armed; port previously disarmed on state 2 -> observer clock never drawn.
+	m_iRoundTimerOn = ( state != 0 ) ? 1 : 0;
 	if( state == 1 && m_flRoundTime > 0.0f )
 		m_iTicketModeFlag = 0; // ref draw gate +0x58==0 (@0x10075de7) on non-ticket arm
 	return 1;
