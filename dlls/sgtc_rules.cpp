@@ -38,6 +38,7 @@
 #include "sgtc_rules.h"
 #include "voice_gamemgr.h"
 extern CVoiceGameMgr g_VoiceGameMgr;
+extern DLL_GLOBAL BOOL g_fGameOver;
 
 // Brush-trigger setup shared by the SGTC trigger classes. Replicates
 // CBaseTrigger::InitTrigger (triggers.cpp) — InitTrigger itself is TU-local
@@ -240,6 +241,21 @@ extern int sgtc_count_syslord, sgtc_count_prime, sgtc_count_jaffa,
 	sgtc_count_carter, sgtc_count_jackson, sgtc_count_tealc,
 	sgtc_count_commander;					// sgtc_round.cpp — BSS 0x2368f4..0x236918
 extern char sgtc_hasplayed;				// sgtc_round.cpp — BSS 0x2368f1
+extern int sgtc_LastState[5];			// sgtc_round.cpp — ref BSS 0x236864
+extern float sgtc_KeyTime;				// sgtc_round.cpp — ref BSS KeyTime
+extern char sgtc_BombCarrierLatch;		// sgtc_round.cpp — ref BOMBCARRIER latch
+extern float sgtc_classchecktime;			// sgtc_round.cpp — ref classchecktime
+extern float sgtc_recounttime;				// sgtc_round.cpp — ref recounttime
+extern cvar_t sgtc_cvar_camperdist;		// sgtc_round.cpp — ref camperdist @0x223544
+extern cvar_t sgtc_cvar_camptime;			// sgtc_round.cpp — ref camptime @0x223558
+extern cvar_t sgtc_cvar_friendlyfire;	// sgtc_round.cpp — ref friendlyfire @0x213358
+extern char sgtc_Elmo;					// sgtc_player.cpp — ref BSS Elmo @0x236890
+extern int sgtc_bomby;					// sgtc_token.cpp — ref BSS bomby @0x2368f0
+extern char sgtc_KeyInPlay;				// sgtc_token.cpp — ref BSS KeyInPlay @0x2368c6
+extern int sgtc_GlobalBombState;			// sgtc_token.cpp — ref BSS GlobalBombState
+extern Vector sgtc_masterkey;			// sgtc_round.cpp — ref BSS 0x2368c8
+extern Vector sgtc_LastKeyPlace;		// sgtc_token.cpp — ref BSS LastKeyPlace
+extern Vector sgtc_firstplace;			// sgtc_token.cpp — ref BSS firstplace
 extern cvar_t sgtc_cvar_tickets;			// sgtc_round.cpp (ref tickets @0x2133f8)
 BOOL SGTC_ThinkRunsMainRoundBody( void );	// ref Think mp_timelimit gate @0x1929ce
 void SGTC_ThinkMpTimelimitResetTickets( void );
@@ -279,6 +295,10 @@ CStargateTeamDM::CStargateTeamDM( void )
 	m_bDisableDeathMessages = FALSE;	// ref this+0xc
 	m_bDisableDeathPenalty = FALSE;	// ref this+0x10
 	m_iSgtcModeVote = -1;	// ref +0x770 pending mode vote (-1 none)
+	m_iSgtcPrevGameModeSet = 0;	// ref DM +0x75c latch (fresh object)
+	m_iSgtcFocusedBoth = 0;		// ref DM +0x760 latch
+	m_iSgtcSupergunsLatch = 0;	// ref DM +0x76c latch
+	m_iSgtcFocusedBucket = 0;	// ref CP +0x75c latch (shared member)
 	g_iSgtcMapType = 0;		// ref DM ctor sets MapType=0 (@0x188600)
 
 	// ref: INDEXENT(0)->targetname (+0x22c) overrides the team list when the
@@ -2180,11 +2200,255 @@ void CStargateTeamDM::UpdateClassCount( void )
 	}
 }
 
+static int SGTC_Rules_Dist3d( const Vector &a, const Vector &b )
+{
+	// ref Endo_distance3d @0x1bbc1c — Manhattan 3d distance as int.
+	return (int)( fabsf( a.x - b.x ) + fabsf( a.y - b.y ) + fabsf( a.z - b.z ) );
+}
+
+static int SGTC_Rules_TakeFromLarger( int a, int b )
+{
+	// ref Endo_takefromlarger — returns the larger-magnitude operand.
+	return ( abs( a ) >= abs( b ) ) ? a : b;
+}
+
+// ref DM Think mid-block (DM-only): superguns armor HUD, GameModeSet latch,
+// focused-both latch, +0x774 clear, VoiceGameMgr.Update. Returns TRUE when the
+// caller should keep running the shared tail (never FALSE here — reserved).
+BOOL CStargateTeamDM::SGTC_ThinkDMCoreLatches( void )
+{
+	// ref: (float)this+0x76c latch vs mp_superweapons; while below the cvar
+	// the rules re-broadcast per-player armor HUD rows to every LIVE client.
+	if( (float)m_iSgtcSupergunsLatch <= sgtc_cvar_superweapons.value )
+	{
+		for( int i = 1; i <= gpGlobals->maxClients; i++ )
+		{
+			CBasePlayer *pl = (CBasePlayer *)UTIL_PlayerByIndex( i );
+			if( pl && pl->IsAlive() )
+			{
+				MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pl->pev );
+					WRITE_BYTE( (int)( pl->pev->armorvalue * 100.0f /
+						(float)pl->m_iSnagArmorCap ) );	// ref ROUND(armor*100/cap)
+					WRITE_BYTE( (int)( sgtc_cvar_superweapons.value + 0.5f ) );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 0 );
+				MESSAGE_END();
+			}
+		}
+	}
+	if( sgtc_GameModeSet < 0 )
+		sgtc_GameModeSet = (int)( sgtc_gamemodex + 0.5f );
+	if( m_iSgtcPrevGameModeSet != sgtc_GameModeSet )
+		RecountTeams( FALSE );	// ref vfun+0x38
+	m_iSgtcSupergunsLatch = (int)( sgtc_cvar_superweapons.value + 0.5f );
+	m_iSgtcPrevGameModeSet = sgtc_GameModeSet;
+
+	const int iBothFocused =
+		( sgtc_G_players_focused < 1 || sgtc_T_players_focused < 1 ) ? 0 : 1;
+	if( m_iSgtcFocusedBoth == 0 && iBothFocused == 1 )
+	{
+		sgtc_nrcooler = 0;
+		RecountTeams( FALSE );	// ref vfun+0x38
+	}
+	if( m_bSgtcVoteEqual != 0 )
+	{
+		m_bSgtcVoteEqual = 0;
+		RecountTeams( FALSE );	// ref vfun+0x38
+	}
+	m_iSgtcFocusedBoth = iBothFocused;
+
+	// ref: CVoiceGameMgr::Update(gpGlobals->frametime) — DM Think carries the
+	// voice-manager tick itself (no CHalfLifeTeamplay::Think in ref).
+	g_VoiceGameMgr.Update( gpGlobals->frametime );
+	return TRUE;
+}
+
+// ref DM Think @0x1934a5 (DM-only): timed key/objective sweep — key-holder
+// state -> BOMBCARRIER / LastState text, respawn the objective when no key
+// holder and no zone, or when >1 holder (reset all +0xaec, respawn at
+// firstplace). Runs while KeyInPlay && KeyTime < now.
+void CStargateTeamDM::SGTC_ThinkKeyBlock( void )
+{
+	if( !( sgtc_KeyInPlay == 1 && sgtc_KeyTime < gpGlobals->time ) )
+		return;
+
+	BOOL bKeyHeld = ( sgtc_masterkey != g_vecZero );
+	if( bKeyHeld )
+	{
+
+	// ref: BOMBCARRIER byte tracks GlobalBombState edges (1 arming, 2 armed).
+	if( sgtc_GlobalBombState == 1 )
+		sgtc_BombCarrierLatch = 2;
+	else if( sgtc_GlobalBombState == 2 )
+		sgtc_BombCarrierLatch = 1;
+
+	int nZone = 0;
+	int iCarrierTeam = 0;
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *pl = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( pl && pl->m_iInBombZone > 0 )
+		{
+			nZone++;
+			iCarrierTeam = (int)pl->pev->team;
+		}
+	}
+
+	char cState = 0;
+	if( iCarrierTeam == 1 && sgtc_BombCarrierLatch != 2 )
+		cState = 1;
+	else if( iCarrierTeam == 2 && sgtc_BombCarrierLatch != 1 )
+		cState = 2;
+	else if( sgtc_GlobalBombState == 0 )
+		cState = 0;
+	else
+		cState = 1;
+
+	// ref vfun+0x11c(this, 0, n) == GlobalText(0, n): LastState/Elmo notices.
+	if( (char)sgtc_LastState[0] != cState && cState != 0 )
+		GlobalText( 0, 1 );
+	if( sgtc_Elmo != 0 )
+		GlobalText( 0, 2 );
+	sgtc_Elmo = 0;
+	sgtc_LastState[0] = cState;
+
+	if( cState != 1 )
+	{
+		// Ensure an item_objective exists when the zone lost its key.
+		CBaseEntity *pObj = NULL;
+		BOOL bHasObjective = FALSE;
+		while( ( pObj = UTIL_FindEntityByClassname( pObj, "item_objective" ) ) != NULL )
+			bHasObjective = TRUE;
+		if( !bHasObjective )
+			cState = 1;
+	}
+	if( cState != 1 && sgtc_bomby != 1 )
+		CBaseEntity::Create( "item_objective", sgtc_LastKeyPlace, g_vecZero, NULL );
+
+	if( nZone > 1 )
+	{
+		ALERT( at_console, "GameRule: More than one player has a key!! Total %d\n", nZone );
+		CBaseEntity *pPl = NULL;
+		while( ( pPl = UTIL_FindEntityByClassname( pPl, "player" ) ) != NULL )
+		{
+			CBasePlayer *pl = (CBasePlayer *)pPl;
+			if( pl )
+				pl->m_iInBombZone = 0;
+		}
+		CBaseEntity::Create( "item_objective", sgtc_firstplace, g_vecZero, NULL );
+	}
+	}	// bKeyHeld
+
+	sgtc_KeyTime = gpGlobals->time + 2.0f;
+}
+
+// ref DM Think recount block (DM-only): RecountTeams cadence + per-player
+// observerless-entity sweep + spawn-camp warn.
+void CStargateTeamDM::SGTC_ThinkRecountCamperSweep( void )
+{
+	if( sgtc_recounttime >= gpGlobals->time )
+		return;
+	RecountTeams( FALSE );
+	sgtc_recounttime = gpGlobals->time + 1.0f;
+
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *pl = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( !( pl && pl->IsAlive() ) )
+			continue;
+
+		// ref: alive, non-observer, no focused team (+0x430 == 0) -> the entity
+		// is a stale body: snap it to (4096,4096,4096), clear movetype, remove.
+		if( !pl->IsObserver() && pl->m_iSgtcActiveTeam == 0 )
+		{
+			pl->pev->origin = Vector( 4096.0f, 4096.0f, 4096.0f );
+			pl->pev->movetype = MOVETYPE_NONE;
+			UTIL_Remove( pl );
+		}
+
+		// ref camper warn: alive, non-observer, team >= 1, GameModeSet >= 1 and
+		// != 2, near the opposing team's info_player_* spawn.
+		if( pl->IsObserver() )
+			continue;
+		if( sgtc_GameModeSet == 2 || pl->pev->team < 1 || sgtc_GameModeSet < 1 )
+			continue;
+
+		const char *pszSpawn = ( pl->pev->team == 1 )
+			? "info_player_goauld" : "info_player_torri";
+		CBaseEntity *pSpot = NULL;
+		while( ( pSpot = UTIL_FindEntityByClassname( pSpot, pszSpawn ) ) != NULL )
+		{
+			const int iDist = SGTC_Rules_Dist3d( pl->pev->origin, pSpot->pev->origin );
+			const int iZ = SGTC_Rules_TakeFromLarger(
+				(int)( pSpot->pev->origin.z + 0.5f ),
+				(int)( pl->pev->origin.z + 0.5f ) );
+			if( !( (float)iDist < sgtc_cvar_camperdist.value ||
+				(float)iZ < sgtc_cvar_camperdist.value ) )
+				continue;
+
+			if( pl->m_bCampZoneLatch != 1 )
+			{
+				pl->m_bCampZoneLatch = 1;
+				pl->m_flCampWarnDeadline =
+					gpGlobals->time + (float)(int)( sgtc_cvar_camptime.value + 0.5f );
+				pl->m_flCampNextWarn = 0;
+			}
+			if( pl->m_bCampZoneLatch != 0 &&
+				pl->m_flCampWarnDeadline < gpGlobals->time &&
+				pl->m_flCampNextWarn < gpGlobals->time )
+			{
+				pl->CampWarn( 1 );
+				pl->m_flCampRearm = gpGlobals->time + 5.0f;
+				pl->m_flCampNextWarn = gpGlobals->time + 3.0f;
+			}
+		}
+	}
+}
+
 void CStargateTeamDM::Think( void )
 {
-	CHalfLifeTeamplay::Think();
+	// ref CStargateTeamDM::Think @0x1929ce — the .so body is self-contained:
+	// no CHalfLifeTeamplay::Think call (voice/timer work is inlined below).
+	if( g_fGameOver )
+	{
+		CHalfLifeMultiplay::Think();
+		return;
+	}
 
-	// ref Think @0x1929ce: resetround before most round guards (no m_bRoundOver skip).
+	// ref: when m_SendPL is armed (both InitHUDs set it) the rules broadcast
+	// TeamNames with the 28 wpnC cost bytes and disarm the flag.
+	if( sgtc_SendPL )
+	{
+		MESSAGE_BEGIN( MSG_ALL, gmsgTeamNames );
+			WRITE_BYTE( m_iSGTCTeamCount );
+			for( int i = 0; i < m_iSGTCTeamCount; i++ )
+				WRITE_STRING( m_szSGTCTeams[i] );
+			for( int i = 0; i < 28; i++ )
+				WRITE_BYTE( (int)( sgtc_wpnC[i]->value + 0.5f ) );
+		MESSAGE_END();
+		sgtc_SendPL = 0;	// ref m_SendPL = 0
+	}
+
+	const BOOL bDM = !SGTC_IsCaptureMode();
+
+	if( bDM )
+	{
+		// ref: round_official set but tournament fairness / min-4 reject —
+		// DM calls its own virtual (+0x120); CP runs its variant post-resetround.
+		if( sgtc_round_official != 0 )
+		{
+			int iAvg = ( sgtc_G_players_focused + sgtc_T_players_focused ) / 2;
+			BOOL bFair = sgtc_G_players_focused <= iAvg + 2 &&
+				sgtc_T_players_focused <= iAvg + 2;
+			if( !bFair || sgtc_G_players_focused < 4 || sgtc_T_players_focused < 4 )
+				EndRound();	// ref DM vfun+0x120 (round reject)
+		}
+
+		SGTC_ThinkDMCoreLatches();
+	}
+
+	// ref: resetround pulse (score clear at >1, then EndRound + cvar reset).
+	// NOTE: the ref FALLS THROUGH after handling; it does not return.
 	float flResetRound = CVAR_GET_FLOAT( "mp_resetround" );
 	if( flResetRound > 0.0f )
 	{
@@ -2199,40 +2463,21 @@ void CStargateTeamDM::Think( void )
 		}
 		EndRound();
 		CVAR_SET_FLOAT( "mp_resetround", 0.0f );
-		return;
+	}
+
+	if( bDM )
+	{
+		SGTC_ThinkKeyBlock();				// ref @0x1934a5
+		if( sgtc_classchecktime < gpGlobals->time )
+		{
+			UpdateClassCount();				// ref vfun+0x118
+			sgtc_classchecktime = gpGlobals->time + 5.0f;
+		}
+		SGTC_ThinkRecountCamperSweep();		// ref recounttime cadence + camper warn
 	}
 
 	if( m_bRoundOver )
 		return;
-
-	// ref Think @0x1929ce (DM) / @0x1853e8 (CP): when m_SendPL is armed
-	// (both InitHUDs set it) the rules broadcast TeamNames with the 28 wpnC
-	// cost bytes (ROUND of the live cvar value, same order as the client's
-	// slot table) and disarm the flag. The InitHUD variant of TeamNames
-	// carries zeros; this re-send is what fills the menu-12 per-slot costs.
-	if( sgtc_SendPL )
-	{
-		MESSAGE_BEGIN( MSG_ALL, gmsgTeamNames );
-			WRITE_BYTE( m_iSGTCTeamCount );
-			for( int i = 0; i < m_iSGTCTeamCount; i++ )
-				WRITE_STRING( m_szSGTCTeams[i] );
-			for( int i = 0; i < 28; i++ )
-				WRITE_BYTE( (int)( sgtc_wpnC[i]->value + 0.5f ) );
-		MESSAGE_END();
-		sgtc_SendPL = 0;	// ref m_SendPL = 0
-	}
-
-	// Key-holder sanity (Think strings: "GameRule: More than one player
-	// has a key!! Total %d").
-	int keys = 0;
-	for( int i = 1; i <= gpGlobals->maxClients; i++ )
-	{
-		CBasePlayer *pl = (CBasePlayer *)UTIL_PlayerByIndex( i );
-		if( pl && pl->m_rgItems[ITEM_SECURITY] > 0 )
-			keys += pl->m_rgItems[ITEM_SECURITY];
-	}
-	if( keys > 1 )
-		ALERT( at_console, "GameRule: More than one player has a key!! Total %d\n", keys );
 
 	// ref Think @0x1929ce: mp_timelimit outer gate — skip fraglimit, PlayMusic,
 	// ticket logic, endtround rollover, and timeleft while map limit elapsed
@@ -2276,8 +2521,71 @@ void CStargateTeamCP::SGTC_Type4TicketSideReset( void )
 
 void CStargateTeamCP::Think( void )
 {
-	// ref CStargateTeamCP::Think @0x1853e8 — shared resetround block plus type==4
-	// ticket/side reset (vtable+0x124 = InverseSpawns when rules+0x734==1).
+	// ref CStargateTeamCP::Think @0x1853e8 — the .so body IS the shared DM
+	// block sequence plus CP-only gates (friendlyfire clamp, +0x758 type
+	// latch, +0x75c bucket, +0x768 superguns latch, resetround type-4 tail,
+	// round_official reject) ending in the DM tail (recount/mode/timeleft).
+	if( g_fGameOver )
+	{
+		CHalfLifeMultiplay::Think();
+		return;
+	}
+
+	// ref: friendlyfire cvar clamped to 0 when NaN/<=0.
+	if( !( sgtc_cvar_friendlyfire.value > 0.0f ) )
+		CVAR_SET_FLOAT( "mp_friendlyfire", 0.0f );
+
+	// ref: this+0x758 type latch — EndRound when the map 'type' flips.
+	if( m_iSgtcCPTypeLatch != sgtc_type )
+		EndRound();
+
+	// ref: m_SendPL TeamNames+wpnC broadcast is handled inside
+	// CStargateTeamDM::Think (shared tail) — ref order here matches.
+	if( sgtc_SendPL )
+	{
+		MESSAGE_BEGIN( MSG_ALL, gmsgTeamNames );
+			WRITE_BYTE( m_iSGTCTeamCount );
+			for( int i = 0; i < m_iSGTCTeamCount; i++ )
+				WRITE_STRING( m_szSGTCTeams[i] );
+			for( int i = 0; i < 28; i++ )
+				WRITE_BYTE( (int)( sgtc_wpnC[i]->value + 0.5f ) );
+		MESSAGE_END();
+		sgtc_SendPL = 0;
+	}
+
+	// ref: this+0x768 superguns latch — armor HUD refresh while rising.
+	if( (float)m_iSgtcCPSupergunsLatch <= sgtc_cvar_superweapons.value )
+	{
+		for( int i = 1; i <= gpGlobals->maxClients; i++ )
+		{
+			CBasePlayer *pl = (CBasePlayer *)UTIL_PlayerByIndex( i );
+			if( pl && pl->IsAlive() )
+			{
+				MESSAGE_BEGIN( MSG_ONE, gmsgArmor, NULL, pl->pev );
+					WRITE_BYTE( (int)( pl->pev->armorvalue * 100.0f /
+						(float)pl->m_iSnagArmorCap ) );
+					WRITE_BYTE( (int)( sgtc_cvar_superweapons.value + 0.5f ) );
+					WRITE_BYTE( 0 );
+					WRITE_BYTE( 0 );
+				MESSAGE_END();
+			}
+		}
+	}
+
+	// ref: this+0x75c focused-presence transition (empty-team paths).
+	int iBucket = SGTC_FocusedPresenceBucket();
+	if( m_iSgtcFocusedBucket != iBucket )
+	{
+		SGTC_Type4TicketSideReset();
+		sgtc_nrcooler = 0.0f;
+		EndRound();
+	}
+	m_iSgtcCPSupergunsLatch = (int)( sgtc_cvar_superweapons.value + 0.5f );
+	m_iSgtcFocusedBucket = iBucket;
+	m_iSgtcCPTypeLatch = sgtc_type;
+
+	// ref: resetround pulse (score clear at >1; type-4 side+ticket reset;
+	// EndRound + cvar reset) — ref FALLS THROUGH after handling.
 	float flResetRound = CVAR_GET_FLOAT( "mp_resetround" );
 	if( flResetRound > 0.0f )
 	{
@@ -2293,17 +2601,6 @@ void CStargateTeamCP::Think( void )
 		SGTC_Type4TicketSideReset();
 		EndRound();
 		CVAR_SET_FLOAT( "mp_resetround", 0.0f );
-		return;
-	}
-
-	// ref: this+0x75c focused-presence transition (empty-team paths).
-	int iBucket = SGTC_FocusedPresenceBucket();
-	if( m_iSgtcFocusedBucket != iBucket )
-	{
-		SGTC_Type4TicketSideReset();
-		sgtc_nrcooler = 0.0f;
-		EndRound();
-		m_iSgtcFocusedBucket = iBucket;
 	}
 
 	// ref: round_official set but tournament fairness / min-4 reject.
@@ -2319,7 +2616,23 @@ void CStargateTeamCP::Think( void )
 		}
 	}
 
-	CStargateTeamDM::Think();
+	if( m_bRoundOver )
+		return;
+
+	// ref tail: shared DM round body (recount cadence is DM-only; CP skips it
+	// via SGTC_IsCaptureMode), mp_timelimit gate + mode/timeleft logic.
+	if( SGTC_ThinkRunsMainRoundBody() )
+	{
+		if( SGTC_ThinkPlayMusic() )
+			return;
+		SGTC_ThinkEndtroundRollover();
+		SGTC_ThinkRefreshTimeleftCvar();
+	}
+	else
+	{
+		SGTC_ThinkMpTimelimitResetTickets();
+		GoToIntermission();
+	}
 }
 
 // ===========================================================================
@@ -2328,6 +2641,8 @@ void CStargateTeamCP::Think( void )
 CStargateTeamCP::CStargateTeamCP( void ) : m_bSpawnsInversed( FALSE )
 {
 	g_iSgtcMapType = 1;	// ref CP ctor sets MapType=1 (@0x179eb7)
+	m_iSgtcCPTypeLatch = 0;		// ref CP +0x758 starts 0; first type!=0 read EndRounds
+	m_iSgtcCPSupergunsLatch = 0;	// ref CP +0x768
 }
 
 void CStargateTeamCP::InverseSpawns( void )

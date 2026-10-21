@@ -121,7 +121,13 @@ int sgtc_G_players = 0;        // BSS 0x21455c — alive-team-1 count (RecountTe
 int sgtc_T_players = 0;        // BSS 0x20c7d0 — alive-team-2 count
 int sgtc_G_players_last = 0;   // BSS 0x2147bc — previous focused-G count
 int sgtc_T_players_last = 0;   // BSS 0x21401c — previous focused-T count
+int sgtc_G_lasty = 0;          // D 0x220ad0 — mode-2 ticket HUD latch (ref G_lasty)
+int sgtc_T_lasty = 0;          // D 0x220ad4 — mode-2 ticket HUD latch (ref T_lasty)
 int sgtc_SendPL = 0;           // BSS — ref m_SendPL (CP InitHUD arms it)
+float sgtc_KeyTime = 0.0f;      // ref BSS KeyTime (DM Think key-respawn tick)
+char sgtc_BombCarrierLatch = 0; // ref BOMBCARRIER byte latch (DM Think key block)
+float sgtc_classchecktime = 0.0f; // ref classchecktime — UpdateClassCount cadence
+float sgtc_recounttime = 0.0f;  // ref recounttime — RecountTeams/camper sweep cadence
 
 // Per-class population tallies (BSS 0x2368f4..0x236918) — refilled by
 // UpdateClassCount (vtable+0x118) and read by the classe cap switches.
@@ -162,6 +168,8 @@ cvar_t sgtc_cvar_truezat = { "mp_truezat", "0", FCVAR_SERVER };	// ref truezat @
 cvar_t sgtc_cvar_wepselmode = { "mp_wepselmode", "1", FCVAR_SERVER };	// ref weaponsel @0x223484 — spawn menu mode; ref cvar name @0x1e0f51 registers default "1" (@0x1dfabd)
 cvar_t sgtc_cvar_freeguns = { "mp_freeguns", "0", FCVAR_SERVER };		// ref freeguns @0x2238f8 — CP spawn grants all slots when >1
 cvar_t sgtc_cvar_attackcountdown = { "mp_attackcountdown", "30", FCVAR_SERVER };	// ref attackcountdown @0x22390c
+cvar_t sgtc_cvar_camperdist = { "mp_camperdistance", "400", FCVAR_SERVER };	// ref camperdist @0x223544 — cvar_t.string "400"
+cvar_t sgtc_cvar_camptime = { "mp_campertime", "30", FCVAR_SERVER };	// ref camptime @0x223558 — cvar_t.string "30"
 
 // ref ClientCommand 'classe' reads these cvar_t blobs live (@0x213420
 // autobalance, @0x2135d8 mp_altclasslimiter, @0x213600..0x2136b4 class caps):
@@ -248,6 +256,8 @@ void SGTC_RegisterRulesCvars( void )
 	CVAR_REGISTER( &sgtc_cvar_wepselmode );
 	CVAR_REGISTER( &sgtc_cvar_freeguns );
 	CVAR_REGISTER( &sgtc_cvar_attackcountdown );
+	CVAR_REGISTER( &sgtc_cvar_camperdist );
+	CVAR_REGISTER( &sgtc_cvar_camptime );
 	CVAR_REGISTER( &sgtc_cvar_resetround );
 	CVAR_REGISTER( &sgtc_cvar_roundspermap );
 	CVAR_REGISTER( &sgtc_cvar_autobalance );
@@ -846,6 +856,17 @@ BOOL CStargateTeamDM::SGTC_ThinkPlayMusic( void )
 			sgtc_hasplayed = 1;
 		}
 	}
+	else if( sgtc_GameModeSet == 2 )
+	{
+		// ref Think @0x1929ce — mode 2 has no ticket PlayMusic stingers (Goal arms
+		// endtround); refresh round timers and latch lasty when tickets hit 100.
+		if( sgtc_G_tickets == 100 )
+			sgtc_G_lasty = 100;
+		if( sgtc_T_tickets == 100 )
+			sgtc_T_lasty = 100;
+		m_flSgtcRoundEnd = gpGlobals->time + 599.0f;
+		m_flSgtcRoundTime = 599.0f;
+	}
 	return FALSE;
 }
 
@@ -901,10 +922,11 @@ void CStargateTeamDM::SGTC_ThinkEndtroundRollover( void )
 			EndRound();
 		}
 		m_iSgtcRoundsOnMap = 0;
-		return;
 	}
 
-	if( sgtc_GameModeSet == 0 )
+	// ref @0x1929ce — shared endtround tail for modes 0 and 2 (runs after mode-2
+	// roundspermap rollover; skipped when NewRound cleared hasplayed).
+	if( ( sgtc_GameModeSet == 0 || sgtc_GameModeSet == 2 ) && sgtc_hasplayed == 1 )
 	{
 		sgtc_endtround = 0.0f;
 		EndRound();
@@ -1497,6 +1519,7 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 		sgtc_LastStateI[i] = 0;
 		sgtc_LastState[i] = 0;
 	}
+	sgtc_recounttime = gpGlobals->time + 30.0f;	// ref NewRound tail (DM+CP)
 	sgtc_round_official = 0;
 
 	// (g) tournament gate.
