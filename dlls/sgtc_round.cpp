@@ -1503,6 +1503,11 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	sgtc_roundtime     = CVAR_GET_FLOAT( "mp_roundtime" );
 	sgtc_type          = 0;
 	sgtc_teamed        = 0;
+	// ref CP NewRound @0x187b34: info_cap_rules walk repopulates type/teamed
+	// after the round-state zero (port had ReadCapInfo only before common, so
+	// sgtc_type was always 0 for the player loop + PlayerSpawn TicketMode).
+	if( bCaptureMode )
+		SGTC_Rules_ReadCapInfo();
 
 	// (b) strip every ground "weapon_*" cache entity with no owner.
 	SGTC_NewRoundStripGroundWeapons();
@@ -2004,11 +2009,6 @@ void CStargateTeamCP::NewRound( void )
 	// flag fields; the port keeps the reset in sgtc_round via its Spawn-side
 	// accessors [ref fields +0x240/+0x244/+0x250/+0x258 mirrored there].
 		SGTC_Zones_ResetCaptureZones();
-	// info_cap_rules: teamed/type globals (m_team / "type" KeyValue).
-	// CCapInfo is TU-local to sgtc_rules.cpp; read the state through the
-	// same class keys via the exposed setter.
-		SGTC_Rules_ReadCapInfo();
-
 	SGTC_NewRoundCommon( TRUE );
 }
 
