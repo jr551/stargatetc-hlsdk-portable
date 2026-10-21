@@ -163,10 +163,12 @@ int CHud::Redraw( float flTime, int intermission )
 			pList = pList->pNext;
 		}
 
-		// ref round timer @0x10075d2d — repaint after entire HUD list (Xash overpaint).
-		if( !intermission )
-			g_SgtcHud.DrawRoundTimer( flTime );
 	}
+
+	// ref round timer @0x10075d2d — repaint after entire HUD list (Xash overpaint).
+	// Outside hud_draw: observer connect can run with hud_draw 0 while SetRndTim arms.
+	if( !intermission )
+		g_SgtcHud.DrawRoundTimer( flTime );
 
 	// are we in demo mode? do we need to draw the logo in the top corner?
 	if( m_iLogo )

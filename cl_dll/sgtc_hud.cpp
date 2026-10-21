@@ -189,16 +189,10 @@ static void SGTC_BlitHudDigit( int x, int y, int digit, int r, int g, int b )
 static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 {
 	const float rem = hud->m_flRoundStart + hud->m_flRoundTime - gHUD.m_flTime;
-	const int w = SGTC_DigitWidth();
-	if( w <= 0 )
-		return;
 	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
 		return;
 
-	// P43g: alt arm tracks the SetRndTim mode byte (ref +0x70), not g_iUser1 — live
-	// verify showed user1=3 at MsgFunc time but top-centre paint still missing when
-	// alt was keyed only on g_iUser1 during HUD_Redraw. Server sends mode 2 only on
-	// the IsObserver() arm (sgtc_round.cpp); mode 1 keeps bottom-left (P41 oracle).
+	// P43g: alt arm tracks the SetRndTim mode byte (ref +0x70), not g_iUser1.
 	const bool altArm = ( hud->m_iRoundTimerMode == 2 );
 
 	SPR_DisableScissor();
@@ -211,20 +205,27 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 
 	if( altArm )
 	{
-		// Observer top-centre: use CHud::DrawHudNumber (P41/P43h — SGTC_BlitHudDigit
-		// matched ref but was invisible on Xash post-list for mode 2).
-		int x = ( x0 + 0x12 ) - ( w * 9 ) / 4;
+		// P43i: do not gate alt arm on SGTC_DigitWidth() — observer connect can paint
+		// before hud.txt sprites bind (w==0 early-return hid the clock since P43d).
+		int wAlt = SGTC_DigitWidth();
+		if( wAlt <= 0 )
+			wAlt = 16;
+		int x = ( x0 + 0x12 ) - ( wAlt * 9 ) / 4;
 		x = gHUD.DrawHudNumber( x, y0, DHN_2DIGITS, mins, r, g, b );
 		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
 		if( dotIdx > 0 )
 		{
 			SPR_Set( gHUD.GetSprite( dotIdx ), r, g, b );
-			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
+			SPR_DrawAdditive( 0, x0 - wAlt / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
 		}
-		x = x0 + ( w * 3 ) / 8;
+		x = x0 + ( wAlt * 3 ) / 8;
 		gHUD.DrawHudNumber( x, y0, DHN_2DIGITS | DHN_ZEROPAD, secs, r, g, b );
 		return;
 	}
+
+	const int w = SGTC_DigitWidth();
+	if( w <= 0 )
+		return;
 
 	// Minutes — ref FUN_10057b66 flags 3 @0x10075ee5 (live-FP bottom-left)
 	int x = ( x0 + 0x12 ) - ( w * 9 ) / 4;
@@ -872,11 +873,22 @@ static void SGTC_DrawAnnounceScroller( CHudSgtc *hud, float flTime )
 	FillRGBA( baseX + 1, baseY - 4 + frameH, maxW + 6, 2, 0x32, 0x32, 0xff, frameA );
 }
 
+static void SGTC_TimerDump_f( void )
+{
+	const float rem = g_SgtcHud.m_flRoundStart + g_SgtcHud.m_flRoundTime - gHUD.m_flTime;
+	gEngfuncs.Con_Printf(
+		"[sgtc] timer_dump on=%d mode=%d ticket=%d t=%.0f rem=%.0f digitW=%d hideHUD=%d hud_draw=%g\n",
+		g_SgtcHud.m_iRoundTimerOn, g_SgtcHud.m_iRoundTimerMode, g_SgtcHud.m_iTicketModeFlag,
+		g_SgtcHud.m_flRoundTime, rem, SGTC_DigitWidth(), gHUD.m_iHideHUDDisplay,
+		gHUD.m_pCvarDraw ? gHUD.m_pCvarDraw->value : -1.0f );
+}
+
 int CHudSgtc::Init( void )
 {
 	m_iFlags = HUDELEM_ACTIVE;
 	Reset();
 	gHUD.AddHudElem( this );
+	gEngfuncs.pfnAddCommand( "sgtc_timer_dump", SGTC_TimerDump_f );
 	// ref FUN_10072e5f — SGTC view toggles (default 0).
 	gEngfuncs.pfnRegisterVariable( "view_lowvis", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_radar", "0", FCVAR_ARCHIVE );
@@ -1594,7 +1606,10 @@ int CHudSgtc::Draw( float flTime )
 	// ref HideWeapon fast path @0x10071967 → 0x10073256 — spectator SetRndTim mode 2
 	// skips slab/radar/portraits; timer paints post-list (DrawRoundTimer).
 	if( m_iRoundTimerMode == 2 )
+	{
+		SGTC_DrawRoundTimer( this, flTime );
 		return 0;
+	}
 
 	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 		return 0;
