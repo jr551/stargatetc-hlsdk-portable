@@ -3182,7 +3182,7 @@ void CStargateUnas::DeathNotice( CBasePlayer *pVictim, entvars_t *pKiller, entva
 BOOL CStargateUnas::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
 	// ref @0x19a33e: voice hop, menuselect (arg1 consumed, no-op),
-	// jointeam {1->Unas, else->Marine}, showmenu -> ShowVGUIMenu(16).
+	// jointeam {1->Unas, else->Marine}, showmenu -> ShowVGUIMenu(10), unknown -> 0.
 	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
 		return TRUE;
 
@@ -3207,16 +3207,21 @@ BOOL CStargateUnas::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 	}
 	if( FStrEq( pcmd, "showmenu" ) )
 	{
-		pPlayer->ShowVGUIMenu( 16 );
+		pPlayer->ShowVGUIMenu( 10 );	// ref @0x19a33e ShowVGUIMenu(10)
 		return TRUE;
 	}
-	return CHalfLifeTeamplay::ClientCommand( pPlayer, pcmd );
+	return FALSE;	// ref: unknown verbs fall out as 0 (no base-class chain)
 }
+
+// ref Unas ClientCommand @0x19a33e / Invis @0x16d4c4 — identical shape:
+// voice hop -> menuselect (argc>=2 eats arg) -> jointeam (arg1: 1->team0,
+// else team1; ChangePlayerTeam vfun+0xec + RecountTeams) -> showmenu
+// (Unas: ShowVGUIMenu(10), Invis: ShowVGUIMenu(0xb)) -> return 0.
 
 BOOL CStargateInvis::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 {
-	// ref @0x17d4c4: voice hop, menuselect, jointeam {1->Torri, 2->Invisible,
-	// else no-op}, showmenu -> ShowVGUIMenu(16).
+	// ref @0x16d4c4: voice hop, menuselect, jointeam {1->Torri, else->Invisible},
+	// showmenu -> ShowVGUIMenu(0xb), unknown -> 0.
 	if( g_VoiceGameMgr.ClientCommand( pPlayer, pcmd ) )
 		return TRUE;
 
@@ -3232,7 +3237,7 @@ BOOL CStargateInvis::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 		{
 			if( atoi( CMD_ARGV( 1 ) ) == 1 )
 				strncpy( pPlayer->m_szTeamName, "Torri", 16 );
-			else if( atoi( CMD_ARGV( 1 ) ) == 2 )
+			else
 				strncpy( pPlayer->m_szTeamName, "Invisible", 16 );
 			ChangePlayerTeam( pPlayer, pPlayer->m_szTeamName, 1, 0 );
 			RecountTeams( FALSE );
@@ -3241,10 +3246,10 @@ BOOL CStargateInvis::ClientCommand( CBasePlayer *pPlayer, const char *pcmd )
 	}
 	if( FStrEq( pcmd, "showmenu" ) )
 	{
-		pPlayer->ShowVGUIMenu( 16 );
+		pPlayer->ShowVGUIMenu( 11 );	// ref @0x16d4c4 ShowVGUIMenu(0xb)
 		return TRUE;
 	}
-	return CHalfLifeTeamplay::ClientCommand( pPlayer, pcmd );
+	return FALSE;	// ref: unknown verbs fall out as 0 (no base-class chain)
 }
 
 void CStargateUnas::ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer )
