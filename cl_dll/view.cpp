@@ -1504,7 +1504,10 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 				break;
 		}
 
-		if( gHUD.m_Spectator.m_pip->value )
+		gHUD.m_Spectator.EnforceSoloInset();
+		if( gHUD.m_Spectator.m_pip->value
+			&& g_iUser2 != 0
+			&& g_iUser1 != OBS_ROAMING )
 			pparams->nextView = 1;	// ref client.dll @0x10081f64: spec_pip != 0
 
 		gHUD.m_Spectator.m_iDrawCycle = 0;
@@ -1548,6 +1551,8 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 	VectorCopy( v_cl_angles, pparams->cl_viewangles );
 	VectorCopy( v_angles, pparams->viewangles );
 	VectorCopy( v_origin, pparams->vieworg );
+
+	gHUD.m_Spectator.EnforceSoloInset();
 }
 
 void DLLEXPORT V_CalcRefdef( struct ref_params_s *pparams )
