@@ -1385,6 +1385,9 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 	// CheckSettings normally runs from VGUI paint (≤1 Hz); run after simorg for vJumpOrigin.
 	VectorCopy( pparams->simorg, v_sim_org );
 	gHUD.m_Spectator.CheckSettings();
+	// Solo dead free cam: full-map 3D pass (orig); not paint-only CheckSettings.
+	if( g_iUser1 == OBS_ROAMING && !g_iUser2 )
+		gHUD.m_Spectator.m_pip->value = INSET_OFF;
 
 	// get old values
 	VectorCopy( pparams->cl_viewangles, v_cl_angles );
