@@ -42,6 +42,102 @@ extern vec3_t v_angles;		// last view angle
 extern vec3_t v_cl_angles;	// last client/mouse angle
 extern vec3_t v_sim_org;	// last sim origin
 
+static int UTIL_FindLastEntityInMap( const char *name, float *origin, float *angle );
+
+static bool SGTC_PlausibleObserverOrigin( const float *org )
+{
+	if( !org )
+		return false;
+
+	if( !( org[0] || org[1] || org[2] ) )
+		return false;
+
+	// SGTC parks nodraw observers off-map at ~(4096,4096,4096).
+	if( org[0] > 3500.0f && org[1] > 3500.0f )
+		return false;
+
+	return true;
+}
+
+static void SGTc_ObsDump_f( void )
+{
+	cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
+	int entUser1 = 0, entUser2 = 0;
+	float plOrigin[3] = { 0.0f, 0.0f, 0.0f };
+
+	if( pl && pl->index > 0 )
+	{
+		entUser1 = pl->curstate.iuser1;
+		entUser2 = pl->curstate.iuser2;
+		VectorCopy( pl->origin, plOrigin );
+	}
+
+	gEngfuncs.Con_Printf(
+		"sgtc_obs: g_iUser1=%d g_iUser2=%d ent_iuser1=%d ent_iuser2=%d spec_pip=%g "
+		"vJumpOrigin=(%.1f,%.1f,%.1f) simorg=(%.1f,%.1f,%.1f) pl_origin=(%.1f,%.1f,%.1f) "
+		"cameraOrigin=(%.1f,%.1f,%.1f)\n",
+		g_iUser1, g_iUser2, entUser1, entUser2, gHUD.m_Spectator.m_pip->value,
+		vJumpOrigin[0], vJumpOrigin[1], vJumpOrigin[2],
+		v_sim_org[0], v_sim_org[1], v_sim_org[2],
+		plOrigin[0], plOrigin[1], plOrigin[2],
+		gHUD.m_Spectator.m_cameraOrigin[0], gHUD.m_Spectator.m_cameraOrigin[1],
+		gHUD.m_Spectator.m_cameraOrigin[2] );
+}
+
+void CHudSpectator::ResolveRoamingOrigin( float *origin, const float *simorg )
+{
+	cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
+
+	if( pl && pl->index > 0 && SGTC_PlausibleObserverOrigin( pl->origin ) )
+	{
+		VectorCopy( pl->origin, origin );
+		return;
+	}
+
+	if( SGTC_PlausibleObserverOrigin( vJumpOrigin ) )
+	{
+		VectorCopy( vJumpOrigin, origin );
+		return;
+	}
+
+	if( SGTC_PlausibleObserverOrigin( m_cameraOrigin ) )
+	{
+		VectorCopy( m_cameraOrigin, origin );
+		return;
+	}
+
+	if( simorg && SGTC_PlausibleObserverOrigin( simorg ) )
+	{
+		VectorCopy( simorg, origin );
+		return;
+	}
+
+	if( SGTC_PlausibleObserverOrigin( m_mapOrigin ) )
+	{
+		VectorCopy( m_mapOrigin, origin );
+		return;
+	}
+
+	float chainOrigin[3] = { 0.0f, 0.0f, 0.0f };
+	float chainAngles[3] = { 0.0f, 0.0f, 0.0f };
+	bool haveChain = false;
+
+	if( UTIL_FindLastEntityInMap( "info_player_torri", chainOrigin, chainAngles ) )
+		haveChain = true;
+	if( UTIL_FindLastEntityInMap( "info_player_goauld", chainOrigin, chainAngles ) )
+		haveChain = true;
+	if( UTIL_FindLastEntityInMap( "info_observer", chainOrigin, chainAngles ) )
+		haveChain = true;
+
+	if( haveChain && SGTC_PlausibleObserverOrigin( chainOrigin ) )
+	{
+		VectorCopy( chainOrigin, origin );
+		return;
+	}
+
+	VectorCopy( m_OverviewData.origin, origin );
+}
+
 #if 0
 const char *GetSpectatorLabel( int iMode )
 {
@@ -186,6 +282,7 @@ int CHudSpectator::Init()
 	gEngfuncs.pfnAddCommand( "spec_help", SpectatorHelp );
 	gEngfuncs.pfnAddCommand( "spec_menu", SpectatorMenu );
 	gEngfuncs.pfnAddCommand( "togglescores", ToggleScores );
+	gEngfuncs.pfnAddCommand( "sgtc_obs_dump", SGTc_ObsDump_f );
 
 	m_drawnames = gEngfuncs.pfnRegisterVariable( "spec_drawnames", "1", 0 );
 	m_drawcone = gEngfuncs.pfnRegisterVariable( "spec_drawcone", "1", 0 );
@@ -355,12 +452,119 @@ int UTIL_FindEntityInMap( const char *name, float *origin, float *angle )
 	return 0;	// we search all entities, but didn't found the correct
 }
 
+static int UTIL_FindLastEntityInMap( const char *name, float *origin, float *angle )
+{
+	int found = 0;
+
+	cl_entity_t *pEnt = gEngfuncs.GetEntityByIndex( 0 );
+
+	if( !pEnt || !pEnt->model )
+		return 0;
+
+	char *data = pEnt->model->entities;
+
+	while( data )
+	{
+		char keyname[256];
+		char token[2048];
+		int n;
+		int matched = 0;
+		float entOrigin[3] = { 0.0f, 0.0f, 0.0f };
+		float entAngle[3] = { 0.0f, 0.0f, 0.0f };
+
+		data = gEngfuncs.COM_ParseFile( data, token );
+		if( ( token[0] == '}' ) || ( token[0] == 0 ) )
+			break;
+		if( !data || token[0] != '{' )
+			return 0;
+
+		while( 1 )
+		{
+			data = gEngfuncs.COM_ParseFile( data, token );
+			if( token[0] == '}' )
+				break;
+			if( !data )
+				return found;
+
+			strcpy( keyname, token );
+			n = strlen( keyname );
+			while( n && keyname[n - 1] == ' ' )
+				keyname[--n] = 0;
+
+			data = gEngfuncs.COM_ParseFile( data, token );
+			if( !data || token[0] == '}' )
+				return found;
+
+			if( !strcmp( keyname, "classname" ) && !strcmp( token, name ) )
+				matched = 1;
+
+			if( !strcmp( keyname, "angle" ) )
+			{
+				float y = atof( token );
+				if( y >= 0 )
+				{
+					entAngle[0] = 0.0f;
+					entAngle[1] = y;
+				}
+				else if( (int)y == -1 )
+				{
+					entAngle[0] = -90.0f;
+					entAngle[1] = 0.0f;
+				}
+				else
+				{
+					entAngle[0] = 90.0f;
+					entAngle[1] = 0.0f;
+				}
+				entAngle[2] = 0.0f;
+			}
+
+			if( !strcmp( keyname, "angles" ) )
+				UTIL_StringToVector( entAngle, token );
+
+			if( !strcmp( keyname, "origin" ) )
+				UTIL_StringToVector( entOrigin, token );
+		}
+
+		if( matched )
+		{
+			VectorCopy( entOrigin, origin );
+			VectorCopy( entAngle, angle );
+			found = 1;
+		}
+	}
+
+	return found;
+}
+
 //-----------------------------------------------------------------------------
 // SetSpectatorStartPosition(): 
 // Get valid map position and 'beam' spectator to this position
 //-----------------------------------------------------------------------------
 void CHudSpectator::SetSpectatorStartPosition()
 {
+	float chainOrigin[3] = { 0.0f, 0.0f, 0.0f };
+	float chainAngles[3] = { 0.0f, 0.0f, 0.0f };
+	bool haveChain = false;
+
+	// Match server StartDeathCam: last torri, then last goauld, then last observer.
+	if( UTIL_FindLastEntityInMap( "info_player_torri", chainOrigin, chainAngles ) )
+		haveChain = true;
+	if( UTIL_FindLastEntityInMap( "info_player_goauld", chainOrigin, chainAngles ) )
+		haveChain = true;
+	if( UTIL_FindLastEntityInMap( "info_observer", chainOrigin, chainAngles ) )
+		haveChain = true;
+
+	if( haveChain && SGTC_PlausibleObserverOrigin( chainOrigin ) )
+	{
+		VectorCopy( chainOrigin, m_cameraOrigin );
+		VectorCopy( chainAngles, m_cameraAngles );
+		VectorCopy( m_cameraOrigin, vJumpOrigin );
+		VectorCopy( m_cameraAngles, vJumpAngles );
+		iJumpSpectator = 1;
+		return;
+	}
+
 	// search for a valid spectator start (ref connect uses info_observer chain)
 	if( UTIL_FindEntityInMap( "info_observer", m_cameraOrigin, m_cameraAngles ) )
 		iJumpSpectator = 1;
@@ -1781,8 +1985,24 @@ bool CHudSpectator::AddOverviewEntityToList( HSPRITE sprite, cl_entity_t *ent, d
 	return false;	// maximum overview entities reached
 }
 
+void CHudSpectator::SyncObserverUserGlobals()
+{
+	cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
+
+	if( !pl || pl->index <= 0 )
+		return;
+
+	if( pl->curstate.iuser1 )
+	{
+		g_iUser1 = pl->curstate.iuser1;
+		g_iUser2 = pl->curstate.iuser2;
+	}
+}
+
 void CHudSpectator::EnforceSoloInset()
 {
+	SyncObserverUserGlobals();
+
 	int iUser1 = g_iUser1;
 	int iUser2 = g_iUser2;
 
@@ -1804,18 +2024,24 @@ void CHudSpectator::EnforceSoloInset()
 		m_pip->value = INSET_OFF;
 	}
 
-	if( pl && pl->index > 0 && ( pl->origin[0] || pl->origin[1] || pl->origin[2] ) )
+	if( pl && pl->index > 0 && SGTC_PlausibleObserverOrigin( pl->origin ) )
 	{
 		VectorCopy( pl->origin, vJumpOrigin );
 	}
-	else if( v_sim_org[0] || v_sim_org[1] || v_sim_org[2] )
+	else if( SGTC_PlausibleObserverOrigin( v_sim_org ) )
 	{
 		VectorCopy( v_sim_org, vJumpOrigin );
+	}
+	else if( SGTC_PlausibleObserverOrigin( m_cameraOrigin ) )
+	{
+		VectorCopy( m_cameraOrigin, vJumpOrigin );
 	}
 }
 
 void CHudSpectator::CheckSettings()
 {
+	SyncObserverUserGlobals();
+
 	// disallow same inset mode as main mode:
 	m_pip->value = (int)m_pip->value;
 

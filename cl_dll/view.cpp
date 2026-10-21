@@ -1384,6 +1384,7 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 
 	// CheckSettings normally runs from VGUI paint (≤1 Hz); run after simorg for vJumpOrigin.
 	VectorCopy( pparams->simorg, v_sim_org );
+	gHUD.m_Spectator.SyncObserverUserGlobals();
 	gHUD.m_Spectator.CheckSettings();
 	// Solo dead free cam: full-map 3D pass (orig); not paint-only CheckSettings.
 	if( g_iUser1 == OBS_ROAMING && !g_iUser2 )
@@ -1474,19 +1475,7 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 				break;
 			case OBS_ROAMING:
 				VectorCopy( v_cl_angles, v_angles );
-				VectorCopy( vJumpOrigin, v_origin );
-				if( !( v_origin[0] || v_origin[1] || v_origin[2] ) )
-				{
-					cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
-					if( pl && pl->index > 0 && ( pl->origin[0] || pl->origin[1] || pl->origin[2] ) )
-					{
-						VectorCopy( pl->origin, v_origin );
-					}
-					else
-					{
-						VectorCopy( pparams->simorg, v_origin );
-					}
-				}
+				gHUD.m_Spectator.ResolveRoamingOrigin( v_origin, pparams->simorg );
 				v_origin[2] += 28.0f;
 				if( g_iUser2 != 0 )
 					gHUD.m_Spectator.GetDirectorCamera( v_origin, v_angles );

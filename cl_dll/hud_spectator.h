@@ -72,6 +72,8 @@ public:
 	int  ToggleInset( bool allowOff );
 	void CheckSettings();
 	void EnforceSoloInset();
+	void SyncObserverUserGlobals();
+	void ResolveRoamingOrigin( float *origin, const float *simorg );
 	void InitHUDData( void );
 	bool AddOverviewEntityToList( HSPRITE sprite, cl_entity_t * ent, double killTime );
 	void DeathMessage( int victim );
