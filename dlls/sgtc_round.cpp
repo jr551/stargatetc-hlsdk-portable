@@ -1817,7 +1817,9 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 		}
 		else if( sgtc_type == 2 )
 		{
-			pPlayer->SetHudRoundTime( 0, 0 );
+			// ref CP type-2 maps (ctp_crypt/frozen/lastn): arm round timer, TicketMode byte 0
+			// (was (0,0) which disarmed client +0x16f0; see .rea/rndtim_arm_rea.md).
+			pPlayer->SetHudRoundTime( (int)m_flSgtcRoundTime, 1 );
 		}
 		else
 		{
@@ -1851,7 +1853,7 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 			else if( sgtc_GameModeSet == 4 )
 				pPlayer->SendGlobalTextIndex( 20 );
 		}
-		else if( pPlayer ) // ref else: spectator HUD round time, mode 2
+		else if( pPlayer->IsObserver() ) // ref else: spectator HUD round time, mode 2
 		{
 			pPlayer->SetHudRoundTime( (int)m_flSgtcRoundTime, 2 );
 		}

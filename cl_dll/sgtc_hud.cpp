@@ -162,6 +162,23 @@ static int SGTC_DigitWidth( void )
 	return gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
 }
 
+static int SGTC_NumberSprite( int digit )
+{
+	char name[16];
+	snprintf( name, sizeof( name ), "number_%d", digit % 10 );
+	return gHUD.GetSpriteIndex( name );
+}
+
+// ref FUN_10057b66 / shipped DrawHudNumber — additive glyph (ds:0x100ed744).
+static void SGTC_BlitHudDigit( int x, int y, int digit, int r, int g, int b )
+{
+	const int idx = SGTC_NumberSprite( digit );
+	if( idx <= 0 )
+		return;
+	SPR_Set( gHUD.GetSprite( idx ), r, g, b );
+	SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( idx ) );
+}
+
 // ref shipped FUN_100718df @0x10075d2d — [MM][2points][SS]; gate +0x16f0 && !+0x58.
 static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 {
@@ -170,24 +187,50 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 
 	SPR_DisableScissor();
 
-	const float rem = hud->m_flRoundStart + hud->m_flRoundTime - flTime;
+	const float rem = hud->m_flRoundStart + hud->m_flRoundTime - gHUD.m_flTime;
 	const int w = SGTC_DigitWidth();
+	if( w <= 0 )
+		return;
+
 	const int x0 = 0x23;
 	const int y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
+	const int r = 0xa8, g = 0xd3, b = 0xff;
+	const int mins = ( rem < 0.0f ) ? 0 : (int)( rem / 60.0f );
+	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
 
-	gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO | DHN_2DIGITS,
-			( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5 flags 3
+	// Minutes — ref FUN_10057b66 flags 3 @0x10075ee5
+	int x = ( x0 + 0x12 ) - ( w * 9 ) / 4;
+	if( mins >= 10 )
+	{
+		SGTC_BlitHudDigit( x, y0, mins / 10, r, g, b );
+		x += w;
+	}
+	else
+		x += w; // DHN_2DIGITS column skip
+	SGTC_BlitHudDigit( x, y0, mins % 10, r, g, b );
 
+	// Separator — ref @0x10075f28-0x10075f97 (additive)
 	const int dotIdx = gHUD.GetSpriteIndex( "2points" );
 	if( dotIdx > 0 )
 	{
-		SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
-		SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) ); // ref @0x10075f28
+		SPR_Set( gHUD.GetSprite( dotIdx ), r, g, b );
+		SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
 	}
 
-	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
-	gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS | DHN_ZEROPAD, secs,
-			0xa8, 0xd3, 0xff ); // ref @0x10075fa0 flags 0xb
+	// Seconds — ref flags 0xb @0x10075fa0 (DHN_ZEROPAD tens)
+	x = x0 + ( w * 3 ) / 8;
+	if( secs >= 10 )
+	{
+		SGTC_BlitHudDigit( x, y0, secs / 10, r, g, b );
+		x += w;
+	}
+	else
+	{
+		SGTC_BlitHudDigit( x, y0, 0, r, g, b ); // flag 0x8 zero pad
+		x += w;
+	}
+	SGTC_BlitHudDigit( x, y0, secs % 10, r, g, b );
+
 }
 
 static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
@@ -1590,8 +1633,6 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_TickProgressTeamUi( this );
 	SGTC_DrawProgressTeamUi( this );
 
-	SGTC_DrawRoundTimer( this, flTime ); // ref @0x10075d2d — after progress row, before portraits
-
 	// ref draws portraits unconditionally (view_portraits is a no-op toggle in ref client.dll);
 	// the shared config sets view_portraits "0" yet the orig renders the portrait cell.
 	if( true )
@@ -1749,9 +1790,6 @@ int CHudSgtc::Draw( float flTime )
 	}
 
 	SGTC_DrawVoteCastMenu( flTime );
-
-	// Xash: repaint timer last so portrait/progress passes cannot overpaint glyphs (ref @0x10075d2d).
-	SGTC_DrawRoundTimer( this, flTime );
 
 	return 1;
 }
@@ -2252,7 +2290,10 @@ int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 	// the message's state byte arms (1) AND disarms (0) the Draw gate
 	// (@0x1007325c). The setter has no direct .text caller — vtable only.
 	// VERIFIED 2026-10-21: vtbl slot 0x1009e738 = 0x10073b62 (was [INFERENCE]).
-	m_iRoundTimerOn = ( state != 0 ) ? 1 : 0;
+	// ref vtbl+0x24 setter: mode 1 arms round timer; 0 disarms; 2 is spectator-only.
+	m_iRoundTimerOn = ( state == 1 ) ? 1 : 0;
+	if( state == 1 && m_flRoundTime > 0.0f )
+		m_iTicketModeFlag = 0; // ref draw gate +0x58==0 (@0x10075de7) on non-ticket arm
 	return 1;
 }
 
