@@ -34,6 +34,8 @@
 #define DHN_DRAWZERO 1
 #define DHN_2DIGITS  2
 #define DHN_3DIGITS  4
+// ref shipped client.dll FUN_10057b66 — flag 0x8 draws '0' in a skipped digit column (not MINUSSIGN).
+#define DHN_ZEROPAD  8
 #define MIN_ALPHA	 100	
 
 #define		HUDELEM_ACTIVE	1

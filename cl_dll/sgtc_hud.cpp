@@ -1555,43 +1555,6 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_TickProgressTeamUi( this );
 	SGTC_DrawProgressTeamUi( this );
 
-	// ref @0x10075d2d — round timer [MM][2points][SS]; gate +0x16f0 != 0 && byte+0x58 == 0
-	// (@0x10075dd2/0x10075de7).  rem = (+0x16e8 + +0x16ec) - gHUD.m_flTime (@0x10075dfe-0x10075e1c).
-	if( m_iRoundTimerOn && !m_iTicketModeFlag )
-	{
-		const float rem = m_flRoundStart + m_flRoundTime - flTime;
-		const int w = SGTC_DigitWidth();
-		// ref @0x10075e9a — layout flag byte[ebp-0x14] (cleared @0x10075dc8, no writer between the
-		// clear and the test) always takes the bottom-left arm; the (W/2, H/10) arm is unreachable.
-		const int x0 = 0x23;
-		const int y0 = ScreenHeight - 0x8e;
-
-		gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO,
-				( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5, 60.0f @0x100a1e88
-
-		// ref @0x10075f28-0x10075f97 — "2points" separator dots at (x0 - w/8), tint 0xa8,0xd3,0xff.
-		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
-		if( dotIdx > 0 )
-		{
-			SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
-			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
-		}
-
-		// shipped @0x1007342d-0x1007346e — seconds = (int)rem % 0x3c, flags 0xb.
-		// In the shipped DrawHudNumber (FUN_10057b66) bit 0x8 is NOT the stock
-		// MINUSSIGN: it forces a '0' glyph in a skipped digit column, i.e.
-		// zero-pads the seconds to two digits ("05", "00"). The stock port
-		// DrawHudNumber has no such flag, so draw the pad glyph ourselves for
-		// secs < 10.
-		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
-		if( secs < 10 )
-		{
-			SPR_Set( gHUD.GetSprite( gHUD.m_HUD_number_0 ), 0xa8, 0xd3, 0xff );
-			SPR_DrawAdditive( 0, x0 + ( w * 3 ) / 8, y0, &gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ) );
-		}
-		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS, secs, 0xa8, 0xd3, 0xff );
-	}
-
 	// ref draws portraits unconditionally (view_portraits is a no-op toggle in ref client.dll);
 	// the shared config sets view_portraits "0" yet the orig renders the portrait cell.
 	if( true )
@@ -1701,6 +1664,31 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_DrawArmorBarStrip( this );
 	SGTC_DrawLifeStrip( this );	// ref @0x10074f66 — life_bar drain strip (degenerate-gated)
 	SGTC_DrawStaminaBarStrip( this );
+
+	// ref shipped FUN_100718df @0x10075d2d — round timer after bottom strips, before ticket row.
+	// Gate +0x16f0 != 0 && byte +0x58 == 0 (@0x10075dd2/0x10075de7).
+	// rem = (+0x16e8 + +0x16ec) - gHUD.m_flTime (@0x10075dfe-0x10075e1c); layout arm x0=0x23, y0=H-0x8e (@0x10075e9a).
+	if( m_iRoundTimerOn && !m_iTicketModeFlag )
+	{
+		const float rem = m_flRoundStart + m_flRoundTime - flTime;
+		const int w = SGTC_DigitWidth();
+		const int x0 = 0x23;
+		const int y0 = ScreenHeight - 0x8e;
+
+		gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO | DHN_2DIGITS,
+				( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5 flags 3
+
+		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
+		if( dotIdx > 0 )
+		{
+			SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
+			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) ); // ref @0x10075f28-0x10075f97
+		}
+
+		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
+		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS | DHN_ZEROPAD, secs,
+				0xa8, 0xd3, 0xff ); // ref @0x10075fa0-0x10075fec flags 0xb
+	}
 
 	// ref @0x10075ff1-0x100761d7 — two-counter score row while TicketMode is active:
 	// first number [+0x60] = Ttickets, second [+0x5c] = Gtickets (port MsgFunc_Ttickets/@FUN_10076d24
