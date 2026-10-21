@@ -2428,7 +2428,7 @@ void CBasePlayer::UpdateGeigerCounter( void )
 	// send range to radition source to client
 	range = (BYTE)( m_flgeigerRange / 4 );
 
-	if( range != m_igeigerRangePrev )
+	if( gmsgGeigerRange && range != m_igeigerRangePrev )
 	{
 		m_igeigerRangePrev = range;
 
@@ -4155,10 +4155,12 @@ void CBasePlayer::UpdateClientData( void )
 			WRITE_BYTE( m_iFlashBattery );
 		MESSAGE_END();
 
-		// Vit_amiN: the geiger state could run out of sync, too
-		MESSAGE_BEGIN( MSG_ONE, gmsgGeigerRange, NULL, pev );
-			WRITE_BYTE( 0 );
-		MESSAGE_END();
+		if( gmsgGeigerRange )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgGeigerRange, NULL, pev );
+				WRITE_BYTE( 0 );
+			MESSAGE_END();
+		}
 
 		InitStatusBar();
 	}
@@ -4205,13 +4207,11 @@ void CBasePlayer::UpdateClientData( void )
 		m_iClientHealth = (int)pev->health;
 	}
 
-	if( (int)pev->armorvalue != m_iClientBattery )
+	// ref/stc_i386.so omits Battery usermsg; gmsgBattery stays 0 — do not WRITE_SHORT on id 0.
+	if( gmsgBattery && (int)pev->armorvalue != m_iClientBattery )
 	{
 		m_iClientBattery = (int)pev->armorvalue;
 
-		ASSERT( gmsgBattery > 0 );
-
-		// send "health" update message
 		MESSAGE_BEGIN( MSG_ONE, gmsgBattery, NULL, pev );
 			WRITE_SHORT( (int)pev->armorvalue );
 		MESSAGE_END();
