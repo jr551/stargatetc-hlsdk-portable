@@ -20,8 +20,8 @@
 //     port: SendValueTo), +0x38 = per-player fade (port UTIL_ScreenFade).
 //   CBaseEntity vtable slot +0x128 (ground weapon strip) -> port: solid=NOT
 //     re-cache stand-in.
-//   CBaseEntity+0x4 = pev. entvars: +0x170 = pev->team, +0x168 = pev->button,
-//     +0x160 = pev->health (zone state marker).
+//   CBaseEntity+0x4 = pev. entvars: +0x160 = pev->health, +0x168 = pev->weapons,
+//     +0x170 = pev->deadflag, +0x180 = pev->button, +0x1ac = pev->team.
 
 #include "extdll.h"
 #include "util.h"
@@ -1192,16 +1192,17 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// superweapons (+0x465 preset gate; the once-per-round latch rides
-	// +0xa9c — ref pev+0x168 bits 18 (IN_ALT1)/15 (IN_SCORE)).
+	// +0xa9c — ref pev+0x168 is pev->weapons, weapon-OWNERSHIP bits 18/15,
+	// not pev->button/IN_ALT1/IN_SCORE).
 	if( pPlayer->m_bSgtcPePreset && pPlayer->m_bSgtcLatchA9c != 1 )
 	{
-		if( !FBitSet( pPlayer->pev->button, IN_ALT1 ) &&
+		if( !FBitSet( pPlayer->pev->weapons, ( 1 << 18 ) ) &&
 			pPlayer->pev->team == 1 )
 		{
 			pPlayer->GiveNamedItem( "weapon_glstaff" );
 			pPlayer->m_bSgtcLatchA9c = 1;
 		}
-		else if( !FBitSet( pPlayer->pev->button, IN_SCORE ) &&
+		else if( !FBitSet( pPlayer->pev->weapons, ( 1 << 15 ) ) &&
 			pPlayer->pev->team == 2 )
 		{
 			pPlayer->GiveNamedItem( "weapon_usas" );
@@ -1209,12 +1210,14 @@ void CStargateTeamDM::PlayerThink( CBasePlayer *pPlayer )
 		}
 	}
 
-	// GiveFromMenu (0x4e5/0x4e7 + 0x4ac time gate) — ref bits 13 (IN_RELOAD)
-	// and 8 (IN_RIGHT) on pev->button. The 15s window is measured against
-	// +0x4ac (m_flSgtcMenuWindow), not +0x4b0 (the menu-10 delay).
-	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
-		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
-		( flNow > pPlayer->m_flSgtcMenuWindow + 15.0f ||
+	// GiveFromMenu (0x4e5/0x4e7 + 0x4ac time gate) — ref pev+0x168 is
+	// pev->weapons: owned-weapon bits 13 and 8 suppress the apply (same bit
+	// indexes as IN_RELOAD/IN_RIGHT, but the FIELD is weapons, not button).
+	// The 15s window is measured against +0x4ac (m_flSgtcMenuWindow), not
+	// +0x4b0 (the menu-10 delay); ref term is gpGlobals < +0x4ac + 15.0.
+	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->weapons, ( 1 << 13 ) ) &&
+		!FBitSet( pPlayer->pev->weapons, ( 1 << 8 ) ) &&
+		( flNow < pPlayer->m_flSgtcMenuWindow + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
 		SGTC_GiveFromMenu( pPlayer );
@@ -1379,11 +1382,13 @@ void CStargateTeamCP::PlayerThink( CBasePlayer *pPlayer )
 		pPlayer->m_bSgtcPadA3D = 1;
 
 	// GiveFromMenu (0x4e5 + 0x4ac gate) — no supergun branch in CP.
-	// ref pev+0x168 bits 13/8 = IN_RELOAD / IN_RIGHT. The 15s window is
-	// measured against +0x4ac (m_flSgtcMenuWindow), not +0x4b0.
-	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->button, IN_RELOAD ) &&
-		!FBitSet( pPlayer->pev->button, IN_RIGHT ) &&
-		( flNow > pPlayer->m_flSgtcMenuWindow + 15.0f ||
+	// ref pev+0x168 is pev->weapons: owned-weapon bits 13/8 (same indexes as
+	// IN_RELOAD/IN_RIGHT, but the FIELD is weapons, not button). The 15s
+	// window is measured against +0x4ac (m_flSgtcMenuWindow), not +0x4b0;
+	// ref term is gpGlobals < +0x4ac + 15.0.
+	if( pPlayer->m_bSgtcMenuLock && !FBitSet( pPlayer->pev->weapons, ( 1 << 13 ) ) &&
+		!FBitSet( pPlayer->pev->weapons, ( 1 << 8 ) ) &&
+		( flNow < pPlayer->m_flSgtcMenuWindow + 15.0f ||
 		  pPlayer->m_bSgtcMenuLockLatch != 1 ) )
 	{
 		SGTC_GiveFromMenu( pPlayer );
