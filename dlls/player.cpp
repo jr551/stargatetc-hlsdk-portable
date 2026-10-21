@@ -205,14 +205,16 @@ void LinkUserMessages( void )
 		return;
 	}
 
+	// ref/stc_i386.so LinkUserMessages @0x132d44: SGTC prefix, stock block, SGTC suffix.
+	SGTC_LinkUserMessages_Prefix();
+
 	gmsgSelAmmo = REG_USER_MSG( "SelAmmo", sizeof(SelAmmo) );
 	gmsgCurWeapon = REG_USER_MSG( "CurWeapon", 3 );
-	gmsgGeigerRange = REG_USER_MSG( "Geiger", 1 );
+	// ref omits Geiger/Battery user messages (no gmsgGeiger/gmsgBattery in .so).
 	gmsgFlashlight = REG_USER_MSG( "Flashlight", 2 );
 	gmsgFlashBattery = REG_USER_MSG( "FlashBat", 1 );
 	gmsgHealth = REG_USER_MSG( "Health", 1 );
 	gmsgDamage = REG_USER_MSG( "Damage", 12 );
-	gmsgBattery = REG_USER_MSG( "Battery", 2);
 	gmsgTrain = REG_USER_MSG( "Train", 1 );
 	//gmsgHudText = REG_USER_MSG( "HudTextPro", -1 );
 	gmsgHudText = REG_USER_MSG( "HudText", -1 ); // we don't use the message but 3rd party addons may!
@@ -243,7 +245,7 @@ void LinkUserMessages( void )
 	gmsgStatusText = REG_USER_MSG( "StatusText", -1 );
 	gmsgStatusValue = REG_USER_MSG( "StatusValue", 3 );
 
-	SGTC_LinkUserMessages();
+	SGTC_LinkUserMessages_Suffix();
 }
 
 LINK_ENTITY_TO_CLASS( player, CBasePlayer )

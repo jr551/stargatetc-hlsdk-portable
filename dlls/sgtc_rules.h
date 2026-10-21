@@ -56,7 +56,9 @@ extern int gmsgConcuss;
 extern int gmsgArmor;
 extern int gmsgZatTouch;
 extern int g_iSgtcMapType;	// ref MapType @0x236594 (skip camp warn when ==1)
-void SGTC_LinkUserMessages( void );
+// ref LinkUserMessages @0x132d44 interleaves SGTC prefix, stock, SGTC suffix.
+void SGTC_LinkUserMessages_Prefix( void );
+void SGTC_LinkUserMessages_Suffix( void );
 void SGTC_InitTrigger( CBaseToggle *pTrigger );
 BOOL SGTC_HandleClientCommand( CBasePlayer *pPlayer, const char *pcmd );	// ref ClientCommand hurtinvert/recallall
 // Round-lifecycle hooks implemented by the zone/rules owners (ref CP NewRound

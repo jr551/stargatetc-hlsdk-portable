@@ -10,8 +10,8 @@
 //   1. hlsdk-xash3d/dlls/gamerules.cpp:310 `InstallGameRules()` — add:
 //         SGTC_InstallGameRules( STRING( gpGlobals->mapname ) )
 //     which dispatches on the map-name prefix (never returns NULL).
-//   2. hlsdk-xash3d/dlls/player.cpp:191 `LinkUserMessages()` — add
-//     `SGTC_LinkUserMessages();` at the end (registers the gmsg* below).
+//   2. hlsdk-xash3d/dlls/player.cpp:191 `LinkUserMessages()` — call
+//     `SGTC_LinkUserMessages_Prefix()` before stock and `_Suffix()` after.
 //   3. hlsdk-xash3d/dlls/player.cpp:2701 `EntSelectSpawnPoint()` — SGTC team
 //     spawns are filtered in CStargateTeamDM/CP/Unas::GetPlayerSpawnSpot, so
 //     no edit is strictly required; optional: fall through to
@@ -102,10 +102,10 @@ int gmsgRadio = 0;
 #pragma GCC visibility pop
 #endif
 
-void SGTC_LinkUserMessages( void )
+void SGTC_LinkUserMessages_Prefix( void )
 {
-	if( gmsgRadarBlip )
-		return; // already registered
+	if( gmsgNewRnd )
+		return;
 	gmsgRadarBlip = REG_USER_MSG( "Blip", -1 );
 	gmsgProgress = REG_USER_MSG( "Progress", -1 );
 	gmsgGtickets = REG_USER_MSG( "Gtickets", 1 );
@@ -123,17 +123,23 @@ void SGTC_LinkUserMessages( void )
 	gmsgTogglePortrait = REG_USER_MSG( "TogglePor", 0 );
 	gmsgReset = REG_USER_MSG( "Reset", -1 );
 	gmsgNewRnd = REG_USER_MSG( "NewRnd", 0 );
-	gmsgSetHudRoundTime = REG_USER_MSG( "SetRndTim", 3 );
+}
+
+void SGTC_LinkUserMessages_Suffix( void )
+{
+	if( gmsgRadio )
+		return;
 	gmsgVGUIMenu = REG_USER_MSG( "VGUIMenu", 1 );
 	gmsgHideVGUI = REG_USER_MSG( "HideVGUI", 0 );
+	gmsgSetHudRoundTime = REG_USER_MSG( "SetRndTim", 3 );
+	gmsgZatTouch = REG_USER_MSG( "ZatTouch", 0 );
 	gmsgEnvParticule = REG_USER_MSG( "EnvFull", 47 );
 	gmsgEnvRain = REG_USER_MSG( "EnvRain", 15 );
 	gmsgEnvFountain = REG_USER_MSG( "EnvFount", 45 );
 	gmsgEnvNewLens = REG_USER_MSG( "NewLens", 10 );
 	gmsgEnvAddRing = REG_USER_MSG( "AddRing", -1 );
 	gmsgChangeParticuleState = REG_USER_MSG( "ChgPartSt", 2 );
-	gmsgRadio = REG_USER_MSG( "Radio", 2 );	// ref registers Radio LAST (LinkUserMessages @0x142d44 tail)
-	gmsgZatTouch = REG_USER_MSG( "ZatTouch", 0 );
+	gmsgRadio = REG_USER_MSG( "Radio", 2 );
 }
 
 extern int g_teamplay;	// gamerules.cpp
