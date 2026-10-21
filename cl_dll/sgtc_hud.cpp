@@ -1563,8 +1563,8 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 
 void CHudSgtc::DrawRoundTimer( float flTime )
 {
-	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
-		return;
+	// ref @0x10075DD2 — gate is +0x16f0 (timer on) and +0x58 (ticket mode) only;
+	// no HideWeapon / HIDEHUD_ALL check on the post-list timer paint path.
 	SGTC_DrawRoundTimer( this, flTime );
 }
 

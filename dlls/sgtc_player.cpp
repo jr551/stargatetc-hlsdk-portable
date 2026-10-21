@@ -1547,6 +1547,7 @@ void CBasePlayer::SetHudRoundTime( int roundtime, int mode )
 			WRITE_BYTE( mode );		// ref @0x1454b0: DAT_00238ec0 = WRITE_BYTE second
 		MESSAGE_END();
 		m_iHudRoundTime = roundtime;
+		m_iHudRoundMode = mode;
 	}
 }
 
