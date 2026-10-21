@@ -162,6 +162,34 @@ static int SGTC_DigitWidth( void )
 	return gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
 }
 
+// ref shipped FUN_100718df @0x10075d2d — [MM][2points][SS]; gate +0x16f0 && !+0x58.
+static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
+{
+	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
+		return;
+
+	SPR_DisableScissor();
+
+	const float rem = hud->m_flRoundStart + hud->m_flRoundTime - flTime;
+	const int w = SGTC_DigitWidth();
+	const int x0 = 0x23;
+	const int y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;
+
+	gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO | DHN_2DIGITS,
+			( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5 flags 3
+
+	const int dotIdx = gHUD.GetSpriteIndex( "2points" );
+	if( dotIdx > 0 )
+	{
+		SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
+		SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) ); // ref @0x10075f28
+	}
+
+	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
+	gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS | DHN_ZEROPAD, secs,
+			0xa8, 0xd3, 0xff ); // ref @0x10075fa0 flags 0xb
+}
+
 static void SGTC_DrawTicketDock( CHudSgtc *hud, float flTime )
 {
 	if( !hud->m_iTicketModeFlag )
@@ -1555,6 +1583,8 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_TickProgressTeamUi( this );
 	SGTC_DrawProgressTeamUi( this );
 
+	SGTC_DrawRoundTimer( this, flTime ); // ref @0x10075d2d — after progress row, before portraits
+
 	// ref draws portraits unconditionally (view_portraits is a no-op toggle in ref client.dll);
 	// the shared config sets view_portraits "0" yet the orig renders the portrait cell.
 	if( true )
@@ -1673,7 +1703,7 @@ int CHudSgtc::Draw( float flTime )
 	{
 		const int w = SGTC_DigitWidth();
 		int x0 = 0x38;				// ref @0x10076089
-		const int y0 = ScreenHeight - 0x8e;	// ref @0x10076098
+		const int y0 = ScreenHeight - 0x8e + gHUD.m_iHudNumbersYOffset;	// ref @0x10076098
 		const int step = 0xd;			// ref @0x100760b8
 		const int drawX0 = x0 - ( w * 9 ) / 4;
 
@@ -1713,30 +1743,8 @@ int CHudSgtc::Draw( float flTime )
 
 	SGTC_DrawVoteCastMenu( flTime );
 
-	// ref shipped FUN_100718df @0x10075d2d — round timer after bottom strips, before ticket row.
-	// Drawn last in port so nothing in this pass paints over the glyph cluster (Xash z-order).
-	// Gate +0x16f0 != 0 && byte +0x58 == 0 (@0x10075dd2/0x10075de7).
-	if( m_iRoundTimerOn && !m_iTicketModeFlag )
-	{
-		const float rem = m_flRoundStart + m_flRoundTime - flTime;
-		const int w = SGTC_DigitWidth();
-		const int x0 = 0x23;
-		const int y0 = ScreenHeight - 0x8e;
-
-		gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO | DHN_2DIGITS,
-				( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5 flags 3
-
-		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
-		if( dotIdx > 0 )
-		{
-			SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
-			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
-		}
-
-		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
-		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS | DHN_ZEROPAD, secs,
-				0xa8, 0xd3, 0xff ); // ref @0x10075fa0-0x10075fec flags 0xb
-	}
+	// Xash: repaint timer last so portrait/progress passes cannot overpaint glyphs (ref @0x10075d2d).
+	SGTC_DrawRoundTimer( this, flTime );
 
 	return 1;
 }
