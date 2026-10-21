@@ -195,15 +195,12 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
 		return;
 
-	// P43b (2026-10-21): shipped CHudSgtc::Draw @0x100718df takes the HideWeapon
-	// fast path (ds:0x100e53f4 >= 2, the m_iHideHUDDisplay byte) for OBSERVERS —
-	// skips the slab and draws the timer at the ALT anchor (x0=ScreenWidth/2,
-	// y0=ScreenHeight/10) with layout flag 1 instead of the bottom-left arm.
-	// The byte itself is 9 for live players on this port's server too, so gating
-	// on >=2 alone would wrongly relocate the live-FP timer — ref-orig resolves
-	// that via a live-player HideWeapon byte <2 which we don't emit. Gate on the
-	// observer state (g_iUser1 != 0) as well so live play keeps bottom-left.
-	const bool altArm = ( gHUD.m_iHideHUDDisplay >= 2 ) && ( g_iUser1 != 0 );
+	// P43b/P43d (2026-10-21): shipped observer clock uses alt anchor (W/2, H/10).
+	// Ref routes via HideWeapon fast path (m_iHideHUDDisplay>=2), but on this port
+	// that byte is often <2 during HUD_Redraw even when g_iUser1!=0 (live verify:
+	// SetRndTim saw hideHUD=9, DrawTimer saw alt=0). Gate alt arm on spectator
+	// state only so live-FP keeps bottom-left (server sends HideWeapon 9 to all).
+	const bool altArm = ( g_iUser1 != 0 );
 
 	SPR_DisableScissor();
 	const int x0 = altArm ? ScreenWidth / 2 : 0x23;
