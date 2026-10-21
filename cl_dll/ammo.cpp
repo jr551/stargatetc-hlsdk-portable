@@ -539,7 +539,9 @@ int CHudAmmo::MsgFunc_HideWeapon( const char *pszName, int iSize, void *pbuf )
 	if( gEngfuncs.IsSpectateOnly() )
 		return 1;
 
-	if( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) )
+	// SGTC server sets HideWeapon=9 (WEAPONS|HEALTH) at spawn; shipped client.dll
+	// still draws the weapon crosshair — only HIDEHUD_ALL clears pfnSetCrosshair.
+	if( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL )
 	{
 		wrect_t nullrc = {0,};
 		gpActiveSel = NULL;
@@ -630,7 +632,7 @@ int CHudAmmo::MsgFunc_CurWeapon( const char *pszName, int iSize, void *pbuf )
 
 	m_pWeapon = pWeapon;
 
-	if( !( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) ) )
+	if( !( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 	{
 		if( !gHUD.m_inScope )
 		{
