@@ -242,6 +242,7 @@ extern int sgtc_count_syslord, sgtc_count_prime, sgtc_count_jaffa,
 	sgtc_count_commander;					// sgtc_round.cpp — BSS 0x2368f4..0x236918
 extern char sgtc_hasplayed;				// sgtc_round.cpp — BSS 0x2368f1
 extern int sgtc_LastState[5];			// sgtc_round.cpp — ref BSS 0x236864
+extern int sgtc_LastStateI[5];			// sgtc_round.cpp — ref BSS 0x23686c
 extern float sgtc_KeyTime;				// sgtc_round.cpp — ref BSS KeyTime
 extern char sgtc_BombCarrierLatch;		// sgtc_round.cpp — ref BOMBCARRIER latch
 extern float sgtc_classchecktime;			// sgtc_round.cpp — ref classchecktime
@@ -250,6 +251,7 @@ extern cvar_t sgtc_cvar_camperdist;		// sgtc_round.cpp — ref camperdist @0x223
 extern cvar_t sgtc_cvar_camptime;			// sgtc_round.cpp — ref camptime @0x223558
 extern cvar_t sgtc_cvar_friendlyfire;	// sgtc_round.cpp — ref friendlyfire @0x213358
 extern char sgtc_Elmo;					// sgtc_player.cpp — ref BSS Elmo @0x236890
+extern char sgtc_KeyChargeLatch;			// sgtc_player.cpp — ref DAT_00246866
 extern int sgtc_bomby;					// sgtc_token.cpp — ref BSS bomby @0x2368f0
 extern char sgtc_KeyInPlay;				// sgtc_token.cpp — ref BSS KeyInPlay @0x2368c6
 extern int sgtc_GlobalBombState;			// sgtc_token.cpp — ref BSS GlobalBombState
@@ -2239,7 +2241,7 @@ BOOL CStargateTeamDM::SGTC_ThinkDMCoreLatches( void )
 	if( sgtc_GameModeSet < 0 )
 		sgtc_GameModeSet = (int)( sgtc_gamemodex + 0.5f );
 	if( m_iSgtcPrevGameModeSet != sgtc_GameModeSet )
-		RecountTeams( FALSE );	// ref vfun+0x38
+		EndRound();	// ref vfun+0x38
 	m_iSgtcSupergunsLatch = (int)( sgtc_cvar_superweapons.value + 0.5f );
 	m_iSgtcPrevGameModeSet = sgtc_GameModeSet;
 
@@ -2248,12 +2250,12 @@ BOOL CStargateTeamDM::SGTC_ThinkDMCoreLatches( void )
 	if( m_iSgtcFocusedBoth == 0 && iBothFocused == 1 )
 	{
 		sgtc_nrcooler = 0;
-		RecountTeams( FALSE );	// ref vfun+0x38
+		EndRound();	// ref vfun+0x38
 	}
 	if( m_bSgtcVoteEqual != 0 )
 	{
 		m_bSgtcVoteEqual = 0;
-		RecountTeams( FALSE );	// ref vfun+0x38
+		EndRound();	// ref vfun+0x38 — unanimous mode vote (Think, not NewRound-only)
 	}
 	m_iSgtcFocusedBoth = iBothFocused;
 
@@ -2272,72 +2274,69 @@ void CStargateTeamDM::SGTC_ThinkKeyBlock( void )
 	if( !( sgtc_KeyInPlay == 1 && sgtc_KeyTime < gpGlobals->time ) )
 		return;
 
-	BOOL bKeyHeld = ( sgtc_masterkey != g_vecZero );
-	if( bKeyHeld )
+	if( sgtc_masterkey == g_vecZero )
 	{
-
-	// ref: BOMBCARRIER byte tracks GlobalBombState edges (1 arming, 2 armed).
-	if( sgtc_GlobalBombState == 1 )
-		sgtc_BombCarrierLatch = 2;
-	else if( sgtc_GlobalBombState == 2 )
-		sgtc_BombCarrierLatch = 1;
-
-	int nZone = 0;
-	int iCarrierTeam = 0;
-	for( int i = 1; i <= gpGlobals->maxClients; i++ )
-	{
-		CBasePlayer *pl = (CBasePlayer *)UTIL_PlayerByIndex( i );
-		if( pl && pl->m_iInBombZone > 0 )
-		{
-			nZone++;
-			iCarrierTeam = (int)pl->pev->team;
-		}
+		sgtc_KeyTime = gpGlobals->time + 2.0f;
+		return;
 	}
 
-	char cState = 0;
-	if( iCarrierTeam == 1 && sgtc_BombCarrierLatch != 2 )
-		cState = 1;
-	else if( iCarrierTeam == 2 && sgtc_BombCarrierLatch != 1 )
-		cState = 2;
-	else if( sgtc_GlobalBombState == 0 )
-		cState = 0;
-	else
-		cState = 1;
+	// ref DM Think @0x1934a5 — key held (masterkey != 0).
+	if( sgtc_GlobalBombState > 0 && sgtc_LastStateI[0] != sgtc_GlobalBombState &&
+		sgtc_GlobalBombState == 2 )
+		GlobalText( 0, 5 );
 
-	// ref vfun+0x11c(this, 0, n) == GlobalText(0, n): LastState/Elmo notices.
-	if( (char)sgtc_LastState[0] != cState && cState != 0 )
+	char keyHeld = 0;
+	int nKeyHolders = 0;
+	char keyCharging = 0;
+	CBaseEntity *pScan = NULL;
+	while( ( pScan = UTIL_FindEntityByClassname( pScan, "player" ) ) != NULL )
+	{
+		CBasePlayer *pl = (CBasePlayer *)pScan;
+		if( pl->m_iInBombZone <= 0 )
+			continue;
+		keyHeld = 1;
+		nKeyHolders++;
+		if( pl->m_iNukeCharge > 5 && pl->m_iNukeCharge < 100 )
+			keyCharging = 1;
+	}
+
+	if( sgtc_KeyChargeLatch != keyCharging && keyCharging != 1 &&
+		( sgtc_LastStateI[0] == sgtc_GlobalBombState || sgtc_GlobalBombState != 2 ) )
+		GlobalText( 0, 4 );
+	if( sgtc_KeyChargeLatch != keyCharging && keyCharging != 0 )
+		GlobalText( 0, 3 );
+
+	sgtc_LastStateI[0] = sgtc_GlobalBombState;
+	sgtc_KeyChargeLatch = keyCharging;
+	sgtc_GlobalBombState = 0;
+
+	if( (char)sgtc_LastState[0] != keyHeld && keyHeld != 0 )
 		GlobalText( 0, 1 );
 	if( sgtc_Elmo != 0 )
 		GlobalText( 0, 2 );
 	sgtc_Elmo = 0;
-	sgtc_LastState[0] = cState;
+	sgtc_LastState[0] = keyHeld;
 
-	if( cState != 1 )
+	if( keyHeld != 1 )
 	{
-		// Ensure an item_objective exists when the zone lost its key.
 		CBaseEntity *pObj = NULL;
-		BOOL bHasObjective = FALSE;
 		while( ( pObj = UTIL_FindEntityByClassname( pObj, "item_objective" ) ) != NULL )
-			bHasObjective = TRUE;
-		if( !bHasObjective )
-			cState = 1;
+			keyHeld = 1;
 	}
-	if( cState != 1 && sgtc_bomby != 1 )
+	if( keyHeld != 1 && sgtc_bomby != 1 )
 		CBaseEntity::Create( "item_objective", sgtc_LastKeyPlace, g_vecZero, NULL );
 
-	if( nZone > 1 )
+	if( nKeyHolders > 1 )
 	{
-		ALERT( at_console, "GameRule: More than one player has a key!! Total %d\n", nZone );
-		CBaseEntity *pPl = NULL;
-		while( ( pPl = UTIL_FindEntityByClassname( pPl, "player" ) ) != NULL )
+		ALERT( at_console, "GameRule: More than one player has a key!! Total %d\n", nKeyHolders );
+		pScan = NULL;
+		while( ( pScan = UTIL_FindEntityByClassname( pScan, "player" ) ) != NULL )
 		{
-			CBasePlayer *pl = (CBasePlayer *)pPl;
-			if( pl )
-				pl->m_iInBombZone = 0;
+			CBasePlayer *pl = (CBasePlayer *)pScan;
+			pl->m_iInBombZone = 0;
 		}
 		CBaseEntity::Create( "item_objective", sgtc_firstplace, g_vecZero, NULL );
 	}
-	}	// bKeyHeld
 
 	sgtc_KeyTime = gpGlobals->time + 2.0f;
 }
@@ -2441,7 +2440,7 @@ void CStargateTeamDM::Think( void )
 			BOOL bFair = sgtc_G_players_focused <= iAvg + 2 &&
 				sgtc_T_players_focused <= iAvg + 2;
 			if( !bFair || sgtc_G_players_focused < 4 || sgtc_T_players_focused < 4 )
-				EndRound();	// ref DM vfun+0x120 (round reject)
+				NewRound();	// ref DM vfun+0x120 (tournament reject — no EndRound score pass)
 		}
 
 		SGTC_ThinkDMCoreLatches();

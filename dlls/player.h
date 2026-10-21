@@ -231,6 +231,12 @@ public:
 	float	m_flShieldThinkNext;	// ref +0x404
 	char	m_bShieldWall;		// ref +0x3e0 — deploy personal shield
 	char	m_bShieldSpawned;	// ref +0x4e4 — effect_shield entity active
+	char	m_bCampZoneLatch;	// ref +0x3e2 (DM Think camper zone state)
+	float	m_flCampWarnDeadline;	// ref +0x40c: camptime deadline once in zone
+	float	m_flCampNextWarn;	// ref +0xa70: next warn tick (overlaid int)
+	float	m_flCampRearm;		// ref +0xa80: zone re-arm tick
+	// ref @0x193a4f — anti-camper warning fan-out; arg 0: "3" else "2".
+	void CampWarn( int arg );
 	char	m_bSgtcDeathCamArmed;	// ref +0x3e1 — set once StartDeathCam used the observer spot
 	char	m_bLanceStunLatch;	// ref +0x4e8 — latched copy of +0xa3e (SgtcThink)
 	char	m_bShieldSprint;	// ref +0x4e9 — sprint drain gate

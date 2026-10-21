@@ -33,6 +33,7 @@ extern void CopyToBodyQue( entvars_t *pev );
 // ref global: Elmo @0x2368f0 — byte flag set to 1 by dropkey's key spawn
 // (ref @0xda0dc MOV byte ptr).  Never read; not an edict pointer.
 char sgtc_Elmo = 0;
+char sgtc_KeyChargeLatch = 0;	// ref DAT_00246866 — DM Think key-block nuke-charge edge latch
 
 static int SGTC_SupergunsHudAux( void )	// REA: ref reads superguns cvar +0xc; read the port struct directly
 {
@@ -427,6 +428,21 @@ void CBasePlayer::SGTC_SyncBombZoneHasKey( void )
 	}
 	else
 		m_bBombZoneKeyLatch = 0;
+}
+
+// ref CBasePlayer::CampWarn @0x193a4f (inside DM::Think's decompile).
+// arg 0 -> HasKey "3", else "2". Skipped entirely when MapType == 1 (CP).
+void CBasePlayer::CampWarn( int arg )
+{
+	if( g_iSgtcMapType == 1 )
+		return;
+	if( gmsgHasKey )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgHasKey, NULL, pev );
+		WRITE_BYTE( arg == 0 ? 3 : 2 );
+		WRITE_BYTE( 0 );
+		MESSAGE_END();
+	}
 }
 
 // ref ClientCommand @0xcb456 — menuselect arg <=4 arms bomb-key warn timer.

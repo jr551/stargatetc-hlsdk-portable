@@ -125,10 +125,17 @@ public:
 	virtual void UpdateClassCount( void );
 	void Penalty( CBasePlayer *pVictim, entvars_t *pKillerEv );	// ref Penalty @0x18ace2 (PlayerKilled path)
 
+	// ref gamerules vfun+0x124-family: TRUE on CStargateTeamCP (capture maps)
+	// so DM::Think can skip DM-only blocks when called on a CP instance.
+	virtual BOOL SGTC_IsCaptureMode( void ) { return FALSE; }
+
 protected:
 	void SGTC_SendTeamNames( CBasePlayer *pPlayer );
 	edict_t *SGTC_FindTeamSpawn( const char *pszClassname );
 	void SGTC_NewRoundCommon( BOOL bCaptureMode );	// shared NewRound body (sgtc_round.cpp)
+	BOOL SGTC_ThinkDMCoreLatches( void );	// ref DM Think mid-block: superguns/GameModeSet/focused latches + VoiceGameMgr
+	void SGTC_ThinkKeyBlock( void );		// ref DM Think @0x1934a5 key/objective block
+	void SGTC_ThinkRecountCamperSweep( void );	// ref DM Think recount + camper sweep
 	BOOL SGTC_ThinkGameMode0( void );	// ref Think @0x1929ce mode-0 fraglimit + elimination
 	BOOL SGTC_ThinkPlayMusic( void );	// ref Think @0x1945b7..0x194b2b PlayMusic paths (modes 1/4)
 	void SGTC_ThinkGameMode34Side( void );	// ref Think @0x1929ce mode 3/4 tails
@@ -153,8 +160,11 @@ protected:
 	int m_iSgtcWinPending;		// ref +0x74c: set when a lone team remains
 	int m_iSgtcWinScoreSide;	// ref +0x754: 1=Torri / 2=Goa'uld bonus before stinger
 	int m_iSgtcFirstTicks;		// ref +0x750: winner team index (0/1) or -5 sentinel
-	int m_iSgtcEmptyTeams;		// ref +0x758: 0 both/G/T=1/2/3 empty-teams state
-	int m_iSgtcFocusedBucket;	// ref +0x75c: 0 none / 1 one side / 2 both focused
+	int m_iSgtcEmptyTeams;		// ref DM +0x758: 0 both/G/T=1/2/3 empty-teams state (CP: +0x758 = type latch — see m_iSgtcCPTypeLatch)
+	int m_iSgtcPrevGameModeSet;	// ref DM +0x75c: prev-GameModeSet latch (EndRound on change)
+	int m_iSgtcFocusedBucket;	// ref CP +0x75c: 0 none / 1 one side / 2 both focused (port bucket latch)
+	int m_iSgtcFocusedBoth;		// ref DM +0x760: 1 when both focused teams >=1 (nrcooler+EndRound on rise)
+	int m_iSgtcSupergunsLatch;	// ref DM +0x76c: last-seen mp_superweapons int (armor HUD refresh)
 	int m_iSgtcAutoBalance;		// ref +0x768: 0 none, 1 ->T light, 2 ->G light
 	char m_bSgtcVoteEqual;		// ref +0x774: unanimous-vote flag
 	BOOL m_bDisableDeathMessages;	// ref this+0xc — armed around forced ChangePlayerTeam kill
@@ -168,6 +178,7 @@ public:
 	const char *GetGameDescription( void ) override { return "StargateTC-CTP"; }
 	void Think( void ) override;	// ref @0x1853e8 — resetround type-4 ticket tail
 	void InverseSpawns( void );
+	BOOL SGTC_IsCaptureMode( void ) override { return TRUE; }	// ref 'type' capture-mode flag
 	void PlayerSpawn( CBasePlayer *pPlayer ) override;
 	void PlayerThink( CBasePlayer *pPlayer ) override;
 	void NewRound( void );
@@ -178,6 +189,8 @@ public:
 	BOOL FPlayerCanRespawn( CBasePlayer *pPlayer ) override;	// ref @0x17ea2a
 	void SGTC_Type4TicketSideReset( void );	// ref CP Think type-4 +0x734 tail
 	BOOL m_bSpawnsInversed;
+	int m_iSgtcCPTypeLatch;		// ref CP +0x758: prev-'type' latch (EndRound on capture-mode flip)
+	int m_iSgtcCPSupergunsLatch;	// ref CP +0x768: last-seen mp_superweapons int
 	// NOTE: ref CP vtable re-points AddPortrait(0x17f72e)/StartPortrait(0x17f99c)/
 	// RedrawPortrait(0x17fc58)/UpdateClassCount(0x17f308)/GlobalText(0x17f244);
 	// those CP bodies are a separate slice (PlayerSpawn ports the tail calls so
