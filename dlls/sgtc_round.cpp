@@ -112,7 +112,9 @@ int sgtc_fadetoblack = 0;      // D 0x21342c (mp_fadetoblack — write-only)
 int sgtc_teamed = 0;           // BSS 0x23658c
 float sgtc_roundtime_official = 0.0f; // this+0x72c mirror (round start tick)
 Vector sgtc_masterkey( 0, 0, 0 ); // BSS 0x2368c8
-float sgtc_lcaptain[2] = { 0.0f, 0.0f }; // BSS 0x236890/0x236894 (T,G captain ticks)
+int sgtc_lcaptain_T = 0;	// BSS 0x236890 (ref lcaptain_T)
+int sgtc_lcaptain_G = 0;	// BSS 0x236894 (ref lcaptain_G)
+int sgtc_UnasTeam = 0;		// BSS 0x2368ec (mode 3 invisible-pick team)
 int sgtc_LastState[5];         // BSS 0x236864
 int sgtc_LastStateI[5];        // BSS 0x23686c
 int sgtc_G_players = 0;        // BSS 0x21455c — alive-team-1 count (RecountTeams)
@@ -497,6 +499,147 @@ void SGTC_ThinkRefreshTimeleftCvar( void )
 }
 
 // ---------------------------------------------------------------------------
+// ref gpGlobals+0x98 — engine field used as captain stamp base (SetCap / Think).
+static int SGTC_GlobalsDeathCount( void )
+{
+	return *(int *)( (char *)gpGlobals + 0x98 );
+}
+
+// ref SetCap(int) @0x18b0c8 (nm 0x17b0c8).
+static void SGTC_SetCap( int iSide )
+{
+	int nTorri = 0;
+	int nGoauld = 0;
+	CBaseEntity *pEnt = NULL;
+
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+		if( !pPlayer->IsAlive() || pPlayer->IsObserver() )
+			continue;
+		if( pPlayer->pev->team == 1 )
+			nTorri++;
+		if( pPlayer->pev->team == 2 )
+			nGoauld++;
+	}
+
+	const int iPickTorri = RANDOM_LONG( 1, nTorri );
+	const int iPickGoauld = RANDOM_LONG( 1, nGoauld );
+	int iTorriSeen = 0;
+	int iGoauldSeen = 0;
+
+	pEnt = NULL;
+	while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+		if( !pPlayer->IsAlive() || pPlayer->IsObserver() )
+			continue;
+
+		if( pPlayer->pev->team == 1 && ( iSide == 1 || iSide == 3 ) )
+		{
+			iTorriSeen++;
+			if( iTorriSeen == iPickTorri )
+			{
+				pPlayer->m_bSgtcPePreset = 1;
+				sgtc_lcaptain_G = SGTC_GlobalsDeathCount() + pPlayer->entindex();
+			}
+			else
+				pPlayer->m_bSgtcPePreset = 0;
+		}
+
+		if( pPlayer->pev->team == 2 && ( iSide == 2 || iSide == 3 ) )
+		{
+			iGoauldSeen++;
+			if( iGoauldSeen == iPickGoauld )
+			{
+				sgtc_lcaptain_T = SGTC_GlobalsDeathCount() + pPlayer->entindex();
+				pPlayer->m_bSgtcPePreset = 1;
+			}
+			else
+				pPlayer->m_bSgtcPePreset = 0;
+		}
+	}
+}
+
+// ref Think @0x1929ce — GameModeSet==3 (ctp invis pick) and ==4 (captain scan).
+void CStargateTeamDM::SGTC_ThinkGameMode34Side( void )
+{
+	if( sgtc_GameModeSet == 3 && m_flSgtcUnasPickTime < gpGlobals->time )
+	{
+		BOOL bAnyInvis = FALSE;
+		CBaseEntity *pEnt = NULL;
+		while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+		{
+			CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+			if( pPlayer->m_bSnagInvisLatch || pPlayer->m_bSnagInvisFlag )
+				bAnyInvis = TRUE;
+		}
+
+		if( !bAnyInvis )
+		{
+			if( sgtc_UnasTeam == 0 )
+				sgtc_UnasTeam = RANDOM_LONG( 1, 2 );
+
+			int nOnTeam = 0;
+			pEnt = NULL;
+			while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+			{
+				CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+				if( pPlayer->pev->team == sgtc_UnasTeam )
+					nOnTeam++;
+			}
+
+			const int iPick = RANDOM_LONG( 1, nOnTeam );
+			int iSeen = 0;
+			pEnt = NULL;
+			while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+			{
+				CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+				pPlayer->m_bSnagInvisFlag = 0;
+				if( pPlayer->pev->team == sgtc_UnasTeam )
+				{
+					iSeen++;
+					if( iSeen == iPick )
+						pPlayer->m_bSnagInvisFlag = 1;
+				}
+			}
+		}
+
+		m_flSgtcUnasPickTime = gpGlobals->time + 2.0f;
+	}
+
+	if( sgtc_GameModeSet == 4 && m_flSgtcCapScanTime < gpGlobals->time )
+	{
+		int nCapTorri = 0;
+		int nCapGoauld = 0;
+		CBaseEntity *pEnt = NULL;
+		while( ( pEnt = UTIL_FindEntityByClassname( pEnt, "player" ) ) != NULL )
+		{
+			CBasePlayer *pPlayer = (CBasePlayer *)pEnt;
+			const int iStamp = SGTC_GlobalsDeathCount() + pPlayer->entindex();
+			if( pPlayer->pev->team == 1 && iStamp == sgtc_lcaptain_G )
+			{
+				pPlayer->m_bSgtcPePreset = 1;
+				nCapTorri++;
+			}
+			else if( pPlayer->pev->team == 2 && iStamp == sgtc_lcaptain_T )
+			{
+				pPlayer->m_bSgtcPePreset = 1;
+				nCapGoauld++;
+			}
+			else
+				pPlayer->m_bSgtcPePreset = 0;
+		}
+
+		if( nCapTorri != 1 && sgtc_G_players > 0 )
+			SGTC_SetCap( 1 );
+		if( nCapGoauld != 1 && sgtc_T_players > 0 )
+			SGTC_SetCap( 2 );
+
+		m_flSgtcCapScanTime = gpGlobals->time + 2.0f;
+	}
+}
+
 // Think PlayMusic paths — ref CStargateTeamDM::Think @0x1929ce (stingers only).
 // Mode 0 elimination: @0x1945b7..0x194642 (endtround +4s). Modes 1/4 tickets:
 // @0x194a07..0x194b2b (endtround +6s). Goal() keeps separate @0x18b650 paths.
@@ -621,6 +764,8 @@ void CStargateTeamDM::SGTC_ThinkPlayMusic( void )
 			}
 		}
 	}
+
+	SGTC_ThinkGameMode34Side();
 
 	if( sgtc_GameModeSet == 1 || sgtc_GameModeSet == 4 )
 	{
@@ -1424,10 +1569,9 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 
 	if( sgtc_GameModeSet == 4 )
 	{
-		sgtc_lcaptain[0] = 0.0f;
-		sgtc_lcaptain[1] = 0.0f;
-		// ref SetCap(3) — capture captain mode marker (lcaptain reset path)
-		m_iSgtcFirstTicks = 3;
+		sgtc_lcaptain_T = 0;
+		sgtc_lcaptain_G = 0;
+		SGTC_SetCap( 3 );	// ref NewRound tail @0x194f42 — both sides
 	}
 
 	if( sgtc_friendlyfire != 0.0f )

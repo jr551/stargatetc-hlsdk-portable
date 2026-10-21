@@ -2268,13 +2268,13 @@ static int SGTC_FocusedPresenceBucket( void )
 	return 2;
 }
 
-static void SGTC_CPType4TicketSideReset( CStargateTeamCP *pCP )
+void CStargateTeamCP::SGTC_Type4TicketSideReset( void )
 {
 	if( sgtc_type != 4 )
 		return;
-	if( pCP->m_iSgtcCPSide == 1 )
-		pCP->InverseSpawns();
-	pCP->m_iSgtcCPSide = 0;
+	if( m_iSgtcCPSide == 1 )
+		InverseSpawns();
+	m_iSgtcCPSide = 0;
 	sgtc_G_tickets = 0;
 	sgtc_T_tickets = 0;
 }
@@ -2295,7 +2295,7 @@ void CStargateTeamCP::Think( void )
 			if( iGoauld >= 0 )
 				m_iSGTCTeamScores[iGoauld] = 0;
 		}
-		SGTC_CPType4TicketSideReset( this );
+		SGTC_Type4TicketSideReset();
 		EndRound();
 		CVAR_SET_FLOAT( "mp_resetround", 0.0f );
 		return;
@@ -2305,7 +2305,7 @@ void CStargateTeamCP::Think( void )
 	int iBucket = SGTC_FocusedPresenceBucket();
 	if( m_iSgtcFocusedBucket != iBucket )
 	{
-		SGTC_CPType4TicketSideReset( this );
+		SGTC_Type4TicketSideReset();
 		sgtc_nrcooler = 0.0f;
 		EndRound();
 		m_iSgtcFocusedBucket = iBucket;
@@ -2319,7 +2319,7 @@ void CStargateTeamCP::Think( void )
 			sgtc_T_players_focused <= iAvg + 2;
 		if( !bFair || sgtc_G_players_focused < 4 || sgtc_T_players_focused < 4 )
 		{
-			SGTC_CPType4TicketSideReset( this );
+			SGTC_Type4TicketSideReset();
 			EndRound();
 		}
 	}

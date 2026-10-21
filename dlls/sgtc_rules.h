@@ -130,6 +130,7 @@ protected:
 	edict_t *SGTC_FindTeamSpawn( const char *pszClassname );
 	void SGTC_NewRoundCommon( BOOL bCaptureMode );	// shared NewRound body (sgtc_round.cpp)
 	void SGTC_ThinkPlayMusic( void );	// ref Think @0x1945b7..0x194b2b PlayMusic paths
+	void SGTC_ThinkGameMode34Side( void );	// ref Think @0x1929ce mode 3/4 tails
 	void SGTC_ThinkEndtroundRollover( void );	// ref Think endtround+hasplayed tails
 
 	char m_szSGTCTeams[SGTC_MAX_SGTC_TEAMS][SGTC_TEAMNAME_LEN];
@@ -141,6 +142,11 @@ protected:
 	float m_flSgtcRoundTime;	// ref +0x728: round duration (s)
 	float m_flSgtcRoundEnd;		// ref +0x724: round end tick
 	int m_iSgtcRoundsOnMap;		// ref +0x730: roundspermap counter (Think rollover)
+	union {
+		float m_flSgtcCapScanTime;	// ref +0x734 (DM mode 4 captain scan)
+		int m_iSgtcCPSide;		// ref +0x734 (CP type-4 side gate)
+	};
+	float m_flSgtcUnasPickTime;	// ref +0x738 (mode 3 invisible pick cadence)
 	int m_iSgtcRoundTicks;		// ref +0x73c: Goal guard + NewRound zero (restart counter)
 	float m_flSgtcRoundTickStart;	// ref +0x744: elimination stinger arm time
 	int m_iSgtcWinPending;		// ref +0x74c: set when a lone team remains
@@ -169,8 +175,8 @@ public:
 	void ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer ) override;	// ref @0x182c02
 	edict_t *GetPlayerSpawnSpot( CBasePlayer *pPlayer );
 	BOOL FPlayerCanRespawn( CBasePlayer *pPlayer ) override;	// ref @0x17ea2a
+	void SGTC_Type4TicketSideReset( void );	// ref CP Think type-4 +0x734 tail
 	BOOL m_bSpawnsInversed;
-	int m_iSgtcCPSide;			// ref this+0x734 — type-4 50hp side selector
 	// NOTE: ref CP vtable re-points AddPortrait(0x17f72e)/StartPortrait(0x17f99c)/
 	// RedrawPortrait(0x17fc58)/UpdateClassCount(0x17f308)/GlobalText(0x17f244);
 	// those CP bodies are a separate slice (PlayerSpawn ports the tail calls so
