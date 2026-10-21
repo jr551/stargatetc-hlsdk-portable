@@ -1506,6 +1506,13 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 		FillRGBA( barX, py + 0x40, barW, 2, 0, 0x82, 0, 255 );
 }
 
+void CHudSgtc::DrawRoundTimer( float flTime )
+{
+	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
+		return;
+	SGTC_DrawRoundTimer( this, flTime );
+}
+
 int CHudSgtc::Draw( float flTime )
 {
 	const int panelH = 168;

@@ -18,6 +18,7 @@ public:
 	int VidInit( void );
 	void Think( void );
 	int Draw( float flTime );
+	void DrawRoundTimer( float flTime ); // ref @0x10075d2d — paint after full HUD list (Xash)
 	void Reset( void );
 
 	int MsgFunc_ZatTouch( const char *pszName, int iSize, void *pbuf );

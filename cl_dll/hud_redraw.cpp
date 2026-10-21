@@ -19,6 +19,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "sgtc_hud.h"
 //#include "triangleapi.h"
 
 #include "vgui_TeamFortressViewport.h"
@@ -161,6 +162,10 @@ int CHud::Redraw( float flTime, int intermission )
 
 			pList = pList->pNext;
 		}
+
+		// ref round timer @0x10075d2d — repaint after entire HUD list (Xash overpaint).
+		if( !intermission )
+			g_SgtcHud.DrawRoundTimer( flTime );
 	}
 
 	// are we in demo mode? do we need to draw the logo in the top corner?
