@@ -1378,6 +1378,9 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 	static int lastWeaponModelIndex = 0;
 	static int lastViewModelIndex = 0;
 
+	// CheckSettings normally runs from VGUI paint (≤1 Hz); refdef runs first.
+	gHUD.m_Spectator.CheckSettings();
+
 	cl_entity_t *ent = gEngfuncs.GetEntityByIndex( g_iUser2 );
 
 	pparams->onlyClientDraw = false;
