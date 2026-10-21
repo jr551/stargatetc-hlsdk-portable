@@ -71,6 +71,7 @@ public:
 	void Reset();
 	int  ToggleInset( bool allowOff );
 	void CheckSettings();
+	void EnforceSoloInset();
 	void InitHUDData( void );
 	bool AddOverviewEntityToList( HSPRITE sprite, cl_entity_t * ent, double killTime );
 	void DeathMessage( int victim );

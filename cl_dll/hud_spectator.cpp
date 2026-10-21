@@ -1781,12 +1781,46 @@ bool CHudSpectator::AddOverviewEntityToList( HSPRITE sprite, cl_entity_t *ent, d
 	return false;	// maximum overview entities reached
 }
 
+void CHudSpectator::EnforceSoloInset()
+{
+	int iUser1 = g_iUser1;
+	int iUser2 = g_iUser2;
+
+	cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
+	if( pl && pl->index > 0 && pl->curstate.iuser1 )
+		iUser1 = pl->curstate.iuser1;
+
+	// Free-roam observer (ref OBS-1): always one full-viewport pass.
+	if( iUser1 == OBS_ROAMING )
+	{
+		m_pip->value = INSET_OFF;
+	}
+	else if( iUser2 != 0 || iUser1 >= OBS_MAP_FREE )
+	{
+		return;
+	}
+	else
+	{
+		m_pip->value = INSET_OFF;
+	}
+
+	if( pl && pl->index > 0 && ( pl->origin[0] || pl->origin[1] || pl->origin[2] ) )
+	{
+		VectorCopy( pl->origin, vJumpOrigin );
+	}
+	else if( v_sim_org[0] || v_sim_org[1] || v_sim_org[2] )
+	{
+		VectorCopy( v_sim_org, vJumpOrigin );
+	}
+}
+
 void CHudSpectator::CheckSettings()
 {
 	// disallow same inset mode as main mode:
 	m_pip->value = (int)m_pip->value;
 
-	if( ( g_iUser1 < OBS_MAP_FREE ) && ( m_pip->value == INSET_CHASE_FREE || m_pip->value == INSET_IN_EYE ) )
+	if( ( g_iUser1 < OBS_MAP_FREE ) && g_iUser2 != 0
+		&& ( m_pip->value == INSET_CHASE_FREE || m_pip->value == INSET_IN_EYE ) )
 	{
 		// otherwise both would show in World picures
 		m_pip->value = INSET_MAP_FREE;
@@ -1798,21 +1832,7 @@ void CHudSpectator::CheckSettings()
 		m_pip->value = INSET_CHASE_FREE;
 	}
 
-	// Solo observer with no iuser2 target: ref uses one full-viewport pass (spec_pip 0).
-	// Chase-locked/free without a target still promoted INSET_MAP_FREE above → grey + inset.
-	if( g_iUser2 == 0 && g_iUser1 >= OBS_CHASE_LOCKED && g_iUser1 <= OBS_ROAMING )
-	{
-		m_pip->value = INSET_OFF;
-		cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
-		if( pl && pl->index > 0 && ( pl->origin[0] || pl->origin[1] || pl->origin[2] ) )
-		{
-			VectorCopy( pl->origin, vJumpOrigin );
-		}
-		else if( v_sim_org[0] || v_sim_org[1] || v_sim_org[2] )
-		{
-			VectorCopy( v_sim_org, vJumpOrigin );
-		}
-	}
+	EnforceSoloInset();
 
 	// disble in intermission screen
 	if( gHUD.m_iIntermission )
@@ -1857,6 +1877,7 @@ void CHudSpectator::CheckSettings()
 		m_pip->value = INSET_OFF;
 
 	// draw small border around inset view, adjust upper black bar
+	EnforceSoloInset();
 	gViewPort->m_pSpectatorPanel->EnableInsetView( m_pip->value != INSET_OFF );
 }
 
