@@ -1827,9 +1827,11 @@ void CBasePlayer::Talent( void )
 				}
 				else
 				{
-					// proximity retag: <80 units, |dz| < 70 -> mode field = 2.
+					// proximity retag: ref @0x14656f cmp eax,0x95 (Endo_distance3d
+					// int result <=149) + Endo_takefromlarger(floor z) < 70.0f
+					// @0x146873 — NOT <80.
 					if( SGTC_Endo_distance3d( pev->origin,
-							pOwned->pev->origin ) < 80 &&
+							pOwned->pev->origin ) <= 149 &&
 						SGTC_Endo_takefromlarger(
 							(int)floorf( pev->origin.z ),
 							(int)floorf( pOwned->pev->origin.z ) ) < 70 )
@@ -1854,9 +1856,9 @@ void CBasePlayer::Talent( void )
 			{
 				SnagInvis();
 				UTIL_MakeVectors( pev->v_angle );
-				Vector vecStart = pev->origin +
-					gpGlobals->v_forward * 16.0f;	// [INFERENCE] scalar rodata
-				Vector vecVel = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+				Vector vecStart = pev->origin + pev->view_ofs +
+					gpGlobals->v_forward * 16.0f;	// ref @0x145b2c: origin+view_ofs+fwd*16
+				Vector vecVel = gpGlobals->v_forward * 300.0f;	// ref rodata 300.0f
 				CBaseEntity *pLarve = CBaseEntity::Create( "monster_larve", vecStart,
 					pev->v_angle, edict() );
 				if( pLarve )
@@ -1969,7 +1971,7 @@ void CBasePlayer::Talent( void )
 				if( !pOwned )
 					return;
 				if( SGTC_Endo_distance3d( pev->origin,
-						pOwned->pev->origin ) < 80 &&
+						pOwned->pev->origin ) <= 149 &&	// ref cmp eax,0x95 (was <80)
 					SGTC_Endo_takefromlarger( (int)floorf( pev->origin.z ),
 						(int)floorf( pOwned->pev->origin.z ) ) < 70 )
 				{
@@ -1994,8 +1996,9 @@ sgtc_talent_zatboom:
 	SnagInvis();
 	UTIL_MakeVectors( pev->v_angle );
 	{
-		Vector vecStart = pev->origin + gpGlobals->v_forward * 16.0f;	// [INFERENCE]
-		Vector vecVel = gpGlobals->v_forward * 300.0f;	// [INFERENCE]
+		Vector vecStart = pev->origin + pev->view_ofs +
+			gpGlobals->v_forward * 16.0f;	// ref @0x145206: origin+view_ofs+fwd*16
+		Vector vecVel = gpGlobals->v_forward * 300.0f;	// ref rodata 300.0f
 		CBaseEntity *pZat = CBaseEntity::Create( "monster_zatboom", vecStart, pev->v_angle, NULL );
 		if( pZat )
 		{
