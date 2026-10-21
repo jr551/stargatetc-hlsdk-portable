@@ -1172,6 +1172,8 @@ static void SGTC_DrawRadarFull( CHudSgtc *hud, float flTime )
 	}
 }
 
+// Xash substitute: ref CHudSgtc::Draw never SPR_Draws life_bar/armor_bar/stamn_bar
+// (sprite bind only in VidInit @0x1007310e; values go to Win32 VGUI panels).
 static void SGTC_DrawBarNeedle( const char *bar, const char *needle, int x, int y, float frac )
 {
 	wrect_t rcBar, rcNeedle;
