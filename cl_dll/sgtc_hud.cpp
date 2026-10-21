@@ -209,7 +209,24 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 	const int mins = ( rem < 0.0f ) ? 0 : (int)( rem / 60.0f );
 	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
 
-	// Minutes — ref FUN_10057b66 flags 3 @0x10075ee5
+	if( altArm )
+	{
+		// Observer top-centre: use CHud::DrawHudNumber (P41/P43h — SGTC_BlitHudDigit
+		// matched ref but was invisible on Xash post-list for mode 2).
+		int x = ( x0 + 0x12 ) - ( w * 9 ) / 4;
+		x = gHUD.DrawHudNumber( x, y0, DHN_2DIGITS, mins, r, g, b );
+		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
+		if( dotIdx > 0 )
+		{
+			SPR_Set( gHUD.GetSprite( dotIdx ), r, g, b );
+			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
+		}
+		x = x0 + ( w * 3 ) / 8;
+		gHUD.DrawHudNumber( x, y0, DHN_2DIGITS | DHN_ZEROPAD, secs, r, g, b );
+		return;
+	}
+
+	// Minutes — ref FUN_10057b66 flags 3 @0x10075ee5 (live-FP bottom-left)
 	int x = ( x0 + 0x12 ) - ( w * 9 ) / 4;
 	if( mins >= 10 )
 	{
@@ -220,7 +237,6 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 		x += w; // DHN_2DIGITS column skip
 	SGTC_BlitHudDigit( x, y0, mins % 10, r, g, b );
 
-	// Separator — ref @0x10075f28-0x10075f97 (additive)
 	const int dotIdx = gHUD.GetSpriteIndex( "2points" );
 	if( dotIdx > 0 )
 	{
@@ -228,7 +244,6 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 		SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
 	}
 
-	// Seconds — ref flags 0xb @0x10075fa0 (DHN_ZEROPAD tens)
 	x = x0 + ( w * 3 ) / 8;
 	if( secs >= 10 )
 	{
@@ -237,7 +252,7 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 	}
 	else
 	{
-		SGTC_BlitHudDigit( x, y0, 0, r, g, b ); // flag 0x8 zero pad
+		SGTC_BlitHudDigit( x, y0, 0, r, g, b );
 		x += w;
 	}
 	SGTC_BlitHudDigit( x, y0, secs % 10, r, g, b );
@@ -1562,9 +1577,8 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 
 void CHudSgtc::DrawRoundTimer( float flTime )
 {
-	// Mode 2 paints in Draw() fast path (ref @0x10071967 → 0x10073256).
-	if( m_iRoundTimerMode == 2 )
-		return;
+	// ref @0x10075DD2 — post-list repaint; mode 2 must paint here when
+	// HUD_Redraw skips CHudSgtc::Draw (HIDEHUD_ALL). Slab skip stays in Draw().
 	SGTC_DrawRoundTimer( this, flTime );
 }
 
@@ -1578,12 +1592,9 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_RunArmorTacSlideFsm( this, flTime );
 
 	// ref HideWeapon fast path @0x10071967 → 0x10073256 — spectator SetRndTim mode 2
-	// skips slab/radar/portraits; timer paints at alt arm inside this Draw().
+	// skips slab/radar/portraits; timer paints post-list (DrawRoundTimer).
 	if( m_iRoundTimerMode == 2 )
-	{
-		SGTC_DrawRoundTimer( this, flTime );
 		return 0;
-	}
 
 	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 		return 0;
