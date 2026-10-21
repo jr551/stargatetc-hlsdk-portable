@@ -374,19 +374,18 @@ static void SGTC_DrawEntranceBanners( CHudSgtc *hud )
 		SPR_Set( gHUD.GetSprite( ammoIdx ), 0x7d, 0x7d, 0x7d );
 		SPR_DrawHoles( 0, 0x60, yAmmo, &rc );
 
-		// ref @0x100749a3-0x10074a18 — second draw is the hud_left sprite record
-		// (+0x1c90 handle / +0x1c94 rect) at the SAME anchor (x=0x60, y=yAmmo), with
-		// absolute rect.right = 0xc7 (@0x100749d1 store to +0x4) and rect.top = 0x9
-		// (@0x100749d8 store to +0x8).  Record field order is {left,right,top,bottom}
-		// (proven by weapon-icon block @0x1007591b-0x10075953).
+		// ref @0x100749a3-0x10074a18 — second draw is hud_left (+0x1c90/+0x1c94), not ammoline.
+		// Anchor is (x=0 @0x100749a3, y=ScreenHeight-0x9f @0x100749b0), distinct from the
+		// ammoline pass at (0x60, yAmmo @0x10074928).  Rect forced right=0xc7 (@0x100749c5)
+		// and top=9 (@0x100749d8); SPR_DrawHoles @0x10074a0b.
 		const int hlIdx = gHUD.GetSpriteIndex( "hud_left" );
 		if( hlIdx > 0 )
 		{
 			wrect_t bar = gHUD.GetSpriteRect( hlIdx );
-			bar.right = 0xc7;	// ref @0x100749d1 — absolute right edge
-			bar.top = 0x9;		// ref @0x100749d8 — absolute top
+			bar.right = 0xc7;
+			bar.top = 0x9;
 			SPR_Set( gHUD.GetSprite( hlIdx ), 0x7d, 0x7d, 0x7d );
-			SPR_DrawHoles( 0, 0x60, yAmmo, &bar );
+			SPR_DrawHoles( 0, 0, ScreenHeight - 0x9f, &bar );
 		}
 	}
 
