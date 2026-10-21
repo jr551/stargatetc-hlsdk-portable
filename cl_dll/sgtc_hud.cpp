@@ -1665,31 +1665,6 @@ int CHudSgtc::Draw( float flTime )
 	SGTC_DrawLifeStrip( this );	// ref @0x10074f66 — life_bar drain strip (degenerate-gated)
 	SGTC_DrawStaminaBarStrip( this );
 
-	// ref shipped FUN_100718df @0x10075d2d — round timer after bottom strips, before ticket row.
-	// Gate +0x16f0 != 0 && byte +0x58 == 0 (@0x10075dd2/0x10075de7).
-	// rem = (+0x16e8 + +0x16ec) - gHUD.m_flTime (@0x10075dfe-0x10075e1c); layout arm x0=0x23, y0=H-0x8e (@0x10075e9a).
-	if( m_iRoundTimerOn && !m_iTicketModeFlag )
-	{
-		const float rem = m_flRoundStart + m_flRoundTime - flTime;
-		const int w = SGTC_DigitWidth();
-		const int x0 = 0x23;
-		const int y0 = ScreenHeight - 0x8e;
-
-		gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO | DHN_2DIGITS,
-				( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5 flags 3
-
-		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
-		if( dotIdx > 0 )
-		{
-			SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
-			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) ); // ref @0x10075f28-0x10075f97
-		}
-
-		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
-		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS | DHN_ZEROPAD, secs,
-				0xa8, 0xd3, 0xff ); // ref @0x10075fa0-0x10075fec flags 0xb
-	}
-
 	// ref @0x10075ff1-0x100761d7 — two-counter score row while TicketMode is active:
 	// first number [+0x60] = Ttickets, second [+0x5c] = Gtickets (port MsgFunc_Ttickets/@FUN_10076d24
 	// and MsgFunc_Gtickets/@FUN_10076cf7).  Layout flag byte[ebp-0x14] (cleared @0x10075dc8) always
@@ -1737,6 +1712,31 @@ int CHudSgtc::Draw( float flTime )
 	}
 
 	SGTC_DrawVoteCastMenu( flTime );
+
+	// ref shipped FUN_100718df @0x10075d2d — round timer after bottom strips, before ticket row.
+	// Drawn last in port so nothing in this pass paints over the glyph cluster (Xash z-order).
+	// Gate +0x16f0 != 0 && byte +0x58 == 0 (@0x10075dd2/0x10075de7).
+	if( m_iRoundTimerOn && !m_iTicketModeFlag )
+	{
+		const float rem = m_flRoundStart + m_flRoundTime - flTime;
+		const int w = SGTC_DigitWidth();
+		const int x0 = 0x23;
+		const int y0 = ScreenHeight - 0x8e;
+
+		gHUD.DrawHudNumber( ( x0 + 0x12 ) - ( w * 9 ) / 4, y0, DHN_DRAWZERO | DHN_2DIGITS,
+				( rem < 0.0f ) ? 0 : (int)( rem / 60.0f ), 0xa8, 0xd3, 0xff ); // ref @0x10075ee5 flags 3
+
+		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
+		if( dotIdx > 0 )
+		{
+			SPR_Set( gHUD.GetSprite( dotIdx ), 0xa8, 0xd3, 0xff );
+			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
+		}
+
+		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
+		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS | DHN_ZEROPAD, secs,
+				0xa8, 0xd3, 0xff ); // ref @0x10075fa0-0x10075fec flags 0xb
+	}
 
 	return 1;
 }
