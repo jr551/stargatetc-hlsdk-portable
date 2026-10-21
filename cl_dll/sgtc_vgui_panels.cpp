@@ -61,6 +61,15 @@
 
 #include "hud.h"
 #include "cl_util.h"
+
+// cl_util.h defines fabs() as a function-like macro. MSVC implements
+// std::abs(double) in <cstdlib> as "return _CSTD fabs(_Xx);", so any <cstdlib>
+// parsed after this point (here pulled in by <typeinfo>) becomes
+// "std::((_Xx) > 0 ? ...)" and fails with C2589 at cstdlib(24). This TU never
+// calls fabs and <cmath> already supplies the real function, so drop the macro
+// for the rest of the file.
+#undef fabs
+
 #include "camera.h"
 #include "kbutton.h"
 #include "const.h"
