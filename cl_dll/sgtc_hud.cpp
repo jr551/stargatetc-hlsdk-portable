@@ -175,8 +175,14 @@ static void SGTC_BlitHudDigit( int x, int y, int digit, int r, int g, int b )
 	const int idx = SGTC_NumberSprite( digit );
 	if( idx <= 0 )
 		return;
-	SPR_Set( gHUD.GetSprite( idx ), r, g, b );
-	SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( idx ) );
+	// SIGSEGV @0x492b0: sprite table can still be NULL during menu-11/NewRound
+	// (hud.txt sprites not bound); guard like the separator below.
+	const HSPRITE h = gHUD.GetSprite( idx );
+	const wrect_t *rc = &gHUD.GetSpriteRect( idx );
+	if( !h || !rc )
+		return;
+	SPR_Set( h, r, g, b );
+	SPR_DrawAdditive( 0, x, y, rc );
 }
 
 // ref shipped FUN_100718df @0x10075d2d — [MM][2points][SS]; gate +0x16f0 && !+0x58.
