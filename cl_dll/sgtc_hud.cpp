@@ -145,7 +145,8 @@ static void SGTC_DrawTicketDockPeel( CHudSgtc *hud )
 		return;
 
 	wrect_t rc = gHUD.GetSpriteRect( ammoIdx );
-	rc.bottom = rc.top + 0x12;
+	rc.right = (int)( (float)pct / 100.0f * 105.0f );	// ref @0x100757c8 — bar width = pct*1.05 (ftol)
+	rc.bottom = 0x12;									// ref @0x100757e8 — absolute 0x12, not top+0x12
 	const int tint = (int)pct + 100;
 	if( tint <= 100 )
 		return;
