@@ -361,8 +361,10 @@ int UTIL_FindEntityInMap( const char *name, float *origin, float *angle )
 //-----------------------------------------------------------------------------
 void CHudSpectator::SetSpectatorStartPosition()
 {
-	// search for info_player start
-	if( UTIL_FindEntityInMap( "trigger_camera",  m_cameraOrigin, m_cameraAngles ) )
+	// search for a valid spectator start (ref connect uses info_observer chain)
+	if( UTIL_FindEntityInMap( "info_observer", m_cameraOrigin, m_cameraAngles ) )
+		iJumpSpectator = 1;
+	else if( UTIL_FindEntityInMap( "trigger_camera",  m_cameraOrigin, m_cameraAngles ) )
 		iJumpSpectator = 1;
 
 	else if( UTIL_FindEntityInMap( "info_player_start",  m_cameraOrigin, m_cameraAngles ) )
@@ -1784,12 +1786,6 @@ void CHudSpectator::CheckSettings()
 	// disallow same inset mode as main mode:
 	m_pip->value = (int)m_pip->value;
 
-	// Solo dead observer (no chase target): orig fills the viewport with the
-	// roaming 3D view. FWGS + gl_clear leaves grey outside the PIP inset when
-	// spec_pip promotes to INSET_MAP_FREE (CheckSettings below).
-	if( g_iUser1 == OBS_ROAMING && g_iUser2 == 0 )
-		m_pip->value = INSET_OFF;
-	
 	if( ( g_iUser1 < OBS_MAP_FREE ) && ( m_pip->value == INSET_CHASE_FREE || m_pip->value == INSET_IN_EYE ) )
 	{
 		// otherwise both would show in World picures
@@ -1800,7 +1796,23 @@ void CHudSpectator::CheckSettings()
 	{
 		// both would show map views
 		m_pip->value = INSET_CHASE_FREE;
-	} 
+	}
+
+	// Solo observer with no iuser2 target: ref uses one full-viewport pass (spec_pip 0).
+	// Chase-locked/free without a target still promoted INSET_MAP_FREE above → grey + inset.
+	if( g_iUser2 == 0 && g_iUser1 >= OBS_CHASE_LOCKED && g_iUser1 <= OBS_ROAMING )
+	{
+		m_pip->value = INSET_OFF;
+		cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
+		if( pl && pl->index > 0 && ( pl->origin[0] || pl->origin[1] || pl->origin[2] ) )
+		{
+			VectorCopy( pl->origin, vJumpOrigin );
+		}
+		else if( v_sim_org[0] || v_sim_org[1] || v_sim_org[2] )
+		{
+			VectorCopy( v_sim_org, vJumpOrigin );
+		}
+	}
 
 	// disble in intermission screen
 	if( gHUD.m_iIntermission )

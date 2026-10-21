@@ -1378,15 +1378,13 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 	static int lastWeaponModelIndex = 0;
 	static int lastViewModelIndex = 0;
 
-	// CheckSettings normally runs from VGUI paint (≤1 Hz); refdef runs first.
-	gHUD.m_Spectator.CheckSettings();
-
 	cl_entity_t *ent = gEngfuncs.GetEntityByIndex( g_iUser2 );
 
 	pparams->onlyClientDraw = false;
 
-	// refresh position
+	// CheckSettings normally runs from VGUI paint (≤1 Hz); run after simorg for vJumpOrigin.
 	VectorCopy( pparams->simorg, v_sim_org );
+	gHUD.m_Spectator.CheckSettings();
 
 	// get old values
 	VectorCopy( pparams->cl_viewangles, v_cl_angles );
@@ -1473,17 +1471,22 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 				break;
 			case OBS_ROAMING:
 				VectorCopy( v_cl_angles, v_angles );
-				// FWGS cl.simorg can lag the server UTIL_SetOrigin on connect-dead
-				// observer (MOVETYPE_NONE); the local entity origin matches the ref
-				// observer spot and keeps the main pass inside the map PVS.
+				VectorCopy( vJumpOrigin, v_origin );
+				if( !( v_origin[0] || v_origin[1] || v_origin[2] ) )
 				{
 					cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
-					const float *src = ( pl && pl->index > 0 ) ? pl->origin : v_sim_org;
-					VectorCopy( src, v_origin );
-					v_origin[2] += 28.0f;
+					if( pl && pl->index > 0 && ( pl->origin[0] || pl->origin[1] || pl->origin[2] ) )
+					{
+						VectorCopy( pl->origin, v_origin );
+					}
+					else
+					{
+						VectorCopy( pparams->simorg, v_origin );
+					}
 				}
-				// override values if director is active
-				gHUD.m_Spectator.GetDirectorCamera(v_origin, v_angles);
+				v_origin[2] += 28.0f;
+				if( g_iUser2 != 0 )
+					gHUD.m_Spectator.GetDirectorCamera( v_origin, v_angles );
 				break;
 			case OBS_IN_EYE:
 				V_CalcNormalRefdef( pparams );
@@ -1499,7 +1502,7 @@ void V_CalcSpectatorRefdef( struct ref_params_s * pparams )
 		}
 
 		if( gHUD.m_Spectator.m_pip->value )
-			pparams->nextView = 1;	// force a second renderer view
+			pparams->nextView = 1;	// ref client.dll @0x10081f64: spec_pip != 0
 
 		gHUD.m_Spectator.m_iDrawCycle = 0;
 	}
