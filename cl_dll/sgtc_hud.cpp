@@ -2012,8 +2012,10 @@ int CHudSgtc::MsgFunc_Armor( const char *pszName, int iSize, void *pbuf )
 	{
 		m_iArmorState = 3;
 		m_iArmorTeamTint = 0;
-		m_iTacDispActive = 0; // ref DAT_100f70d0
 	}
+	// ref @0x10076b0e — sub==4 clears DAT_100f70d0 unconditionally (outside the state gate).
+	if( sub == 4 )
+		m_iTacDispActive = 0;
 	if( sub == 5 && m_iArmorState == 0 )
 	{
 		m_iArmorState = 1;
@@ -2042,10 +2044,10 @@ int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 	if( m_iProgress == 100 )
 		m_iBlipProgress = 100;
 
-	// ref FUN_10073faa @0x10073faa (the "Progress" usermsg handler) also stores
-	// byte 2 in DAT_100ddad4 (menu-12 budget), the 28 slot bytes in
-	// DAT_100dd9e4 (per-slot state 0/1/2) and the trailing byte in
-	// DAT_100ddad8 (reset request). Our server sends m_iNukeCharge /
+	// ref FUN_10076c5f (sgtc2_dll build) — the "Progress" handler also stores
+	// byte 2 in DAT_100e1b94 (menu-12 budget), the 28 slot bytes in
+	// DAT_100e1aa4 (per-slot state 0/1/2) and the trailing byte in
+	// DAT_100e1b98 (reset request). Our server sends m_iNukeCharge /
 	// m_iNukeBonus / m_iProgressTeam[28] / reset-flag in exactly that order
 	// (dlls/sgtc_player.cpp SGTC_SendProgressIfDirty).
 	{
@@ -2219,16 +2221,16 @@ int CHudSgtc::MsgFunc_TogglePor( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref @0x100771f3 — short round-time + byte state.
+// ref @0x100771f3 (sgtc2) / FUN_1007432f (shipped) — SHORT roundtime + BYTE state,
+// matching ref SetHudRoundTime @0x145494 (WRITE_SHORT then WRITE_BYTE).
 int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	int state = READ_BYTE();	// ref write order @0x1354ee: BYTE mode first
-	m_flRoundTime = (float)READ_SHORT();	// then SHORT roundtime
+	m_flRoundTime = (float)READ_SHORT();	// ref reads the wide field first → +0x16ec/+0x6c
+	int state = READ_BYTE();	// then the byte → vtbl mode arm
 	m_flRoundStart = gHUD.m_flTime;
-	if( state )
-		m_iTicketMode = state; // ref calls this vtable+0x1c
+	m_iTicketMode = state;	// ref calls this vtable setter unconditionally (0 disarms)
 	// ref +0x16f0 setter @0x100766dd — the round-timer message arms the Draw gate @0x10075dd2.
 	// (Ref's setter has no direct .text caller; wired here as the round-time arm point.) [INFERENCE]
 	m_iRoundTimerOn = 1;

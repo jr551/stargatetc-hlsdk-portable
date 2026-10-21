@@ -1490,16 +1490,16 @@ static int SGTC_Endo_takefromlarger( int a, int b )
 	return a > b ? a - b : b - a;
 }
 
-// ref CBasePlayer::SetHudRoundTime(int,int) @0x125494 — MSG_ONE SetRndTim:
-// SHORT roundtime + BYTE mode, only when (roundtime,mode) changed. Ref quirk:
-// the mode field +0x4d8 is compared but never written back.
+// ref CBasePlayer::SetHudRoundTime(int,int) @0x145494 — MSG_ONE SetRndTim:
+// WRITE_SHORT(roundtime) then WRITE_BYTE(mode), only when (roundtime,mode)
+// changed. Ref quirk: the mode field +0x4d8 is compared but never written back.
 void CBasePlayer::SetHudRoundTime( int roundtime, int mode )
 {
 	if( m_iHudRoundTime != roundtime || m_iHudRoundMode != mode )
 	{
 		MESSAGE_BEGIN( MSG_ONE, gmsgSetHudRoundTime, NULL, pev );
-			WRITE_BYTE( mode );	// ref @0x1354ee: pfnWriteByte(mode) FIRST
-			WRITE_SHORT( roundtime );	// ref @0x135505: pfnWriteShort second
+			WRITE_SHORT( roundtime );	// ref @0x1454a7: DAT_00238ec8 = WRITE_SHORT FIRST
+			WRITE_BYTE( mode );		// ref @0x1454b0: DAT_00238ec0 = WRITE_BYTE second
 		MESSAGE_END();
 		m_iHudRoundTime = roundtime;
 	}
