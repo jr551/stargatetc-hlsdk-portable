@@ -247,6 +247,8 @@ extern float sgtc_KeyTime;				// sgtc_round.cpp — ref BSS KeyTime
 extern char sgtc_BombCarrierLatch;		// sgtc_round.cpp — ref BOMBCARRIER latch
 extern float sgtc_classchecktime;			// sgtc_round.cpp — ref classchecktime
 extern float sgtc_recounttime;				// sgtc_round.cpp — ref recounttime
+extern int sgtc_LastState[5];				// sgtc_round.cpp — BSS 0x236864
+extern DLL_GLOBAL BOOL g_fGameOver;
 extern cvar_t sgtc_cvar_camperdist;		// sgtc_round.cpp — ref camperdist @0x223544
 extern cvar_t sgtc_cvar_camptime;			// sgtc_round.cpp — ref camptime @0x223558
 extern cvar_t sgtc_cvar_friendlyfire;	// sgtc_round.cpp — ref friendlyfire @0x213358
