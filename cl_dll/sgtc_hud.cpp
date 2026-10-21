@@ -2099,14 +2099,14 @@ int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+// ref FUN_10076c3d (sgtc2) / shipped hook @0x10072c40 — BEGIN_READ only; no field
+// stores (SGTC draw gates on gHUD.m_iHideHUDDisplay / ds:0x100e9d0c, not this msg).
 int CHudSgtc::MsgFunc_HideHud( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
-	if( iSize > 0 )
-		m_iHideHud = READ_BYTE();
-	else
-		m_iHideHud = 1;
+	for( int i = 0; i < iSize; i++ )
+		READ_BYTE();
 	return 1;
 }
 
