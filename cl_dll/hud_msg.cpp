@@ -119,6 +119,11 @@ int CHud::MsgFunc_Damage( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
+void CHud::SetConcussEffectRaw( int effect )
+{
+	m_iConcussionEffect = effect;
+}
+
 int CHud::MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf )
 {
 	int r, g, b;

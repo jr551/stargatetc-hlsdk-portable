@@ -634,6 +634,8 @@ public:
 	void _cdecl MsgFunc_ViewMode( const char *pszName, int iSize, void *pbuf );
 	int _cdecl MsgFunc_SetFOV( const char *pszName,  int iSize, void *pbuf );
 	int  _cdecl MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf );
+	// ref client Concuss hook @0x100592cf — stores byte0 at gHUD+0x1c only (no dmg_concuss icon).
+	void SetConcussEffectRaw( int effect );
 
 	// Screen information
 	SCREENINFO	m_scrinfo;

@@ -768,6 +768,8 @@ static void SGTC_DrawAnnounceScroller( CHudSgtc *hud, float flTime )
 
 	const int frameA = 100 - minScroll;
 	const int frameH = ( lineH + lineGap ) * lineCount + 8;
+	// ref @0x10074757 — full-box fill then 2px border strips (5× FillRGBA).
+	FillRGBA( baseX, baseY - 4, maxW + 8, frameH, 0x32, 0x32, 0xff, frameA );
 	FillRGBA( baseX, baseY - 4, 2, frameH, 0x32, 0x32, 0xff, frameA );
 	FillRGBA( baseX + maxW + 6, baseY - 4, 2, frameH, 0x32, 0x32, 0xff, frameA );
 	FillRGBA( baseX + 1, baseY - 4, maxW + 6, 2, 0x32, 0x32, 0xff, frameA );
@@ -1873,8 +1875,8 @@ int CHudSgtc::MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf )
 	g_iSgtcAnnouncePending = READ_BYTE();
 	if( g_iSgtcAnnouncePending == 0 )
 	{
-		char one = (char)concuss;
-		return gHUD.MsgFunc_Concuss( pszName, 1, &one );
+		gHUD.SetConcussEffectRaw( concuss );
+		return 1;
 	}
 	m_iFlags |= HUD_ACTIVE;
 	return 1;
