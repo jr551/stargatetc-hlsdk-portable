@@ -822,10 +822,13 @@ static WEAPON *SGTC_CurrentWeapon( void )
 	return ammo->m_pWeapon;
 }
 
-// ref FUN_1007671c — weapon icon update. Ref caches the resolved sprite record
-// (+0x1718) whenever the sgtcweapon HSPRITE (+0x150, loaded per-weapon by
-// FUN_1004eb4b from sprites/<name>.txt slot "sgtcweapon") changes; the port
-// resolves lazily here since SDK WEAPON has no +0x150 field. [INFERENCE]
+// shipped client.dll FUN_1004c8fb — per-weapon sprite loader called from the
+// WeapPickup copy (FUN_1004f2a0, after memcpy of the 0x15c weapon block) and
+// the slot-sweep WeaponsInit (FUN_1004c7f0). It resolves "sgtcweapon" from
+// sprites/<szName>.txt once per weapon into weapon+0x148 (HSPRITE) /
+// +0x14c..0x158 (wrect); the ammo Draw (FUN_1004e355) SPR_Sets +0x148.
+// The port resolves the same txt+key lazily on weapon switch instead — same
+// file, same key, equivalent visible icon. VERIFIED 2026-10-21 (was [INFERENCE]).
 static void SGTC_SetWeaponIcon( CHudSgtc *hud, WEAPON *pw )
 {
 	static WEAPON *s_pIconWeapon = NULL;
@@ -1574,9 +1577,18 @@ int CHudSgtc::Draw( float flTime )
 			SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
 		}
 
-		// ref @0x10075fa0-0x10075fec — seconds = (int)rem % 0x3c, ref flags 0xb (bit 0x8 has no
-		// port DHN equivalent; 0x1|0x2 is DRAWZERO|2DIGITS) — [INFERENCE] on the 0x8 bit.
+		// shipped @0x1007342d-0x1007346e — seconds = (int)rem % 0x3c, flags 0xb.
+		// In the shipped DrawHudNumber (FUN_10057b66) bit 0x8 is NOT the stock
+		// MINUSSIGN: it forces a '0' glyph in a skipped digit column, i.e.
+		// zero-pads the seconds to two digits ("05", "00"). The stock port
+		// DrawHudNumber has no such flag, so draw the pad glyph ourselves for
+		// secs < 10.
 		const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
+		if( secs < 10 )
+		{
+			SPR_Set( gHUD.GetSprite( gHUD.m_HUD_number_0 ), 0xa8, 0xd3, 0xff );
+			SPR_DrawAdditive( 0, x0 + ( w * 3 ) / 8, y0, &gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ) );
+		}
 		gHUD.DrawHudNumber( x0 + ( w * 3 ) / 8, y0, DHN_DRAWZERO | DHN_2DIGITS, secs, 0xa8, 0xd3, 0xff );
 	}
 
