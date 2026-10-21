@@ -61,14 +61,24 @@ static const struct
 	{ "monster_satchel",   4 },
 };
 
+// ref Endo_roundto @0x1bb72c: rounds an int to its nearest hundredth — identity
+// for integer inputs; ref wraps ROUND(dx*0.1) in it before WRITE_COORD.
+static int SGTC_Endo_roundto( int v )
+{
+	return (int)floor( (double)(int)floor( (double)v * 100.0 + 0.5 ) / 100.0 + 0.5 );
+}
+
 static void SGTC_SendRadarBlip( CBasePlayer *pPlayer, int iType, int iDx, int iDy )
 {
 	if( !gmsgRadarBlip )
 		return;
 	MESSAGE_BEGIN( MSG_ONE, gmsgRadarBlip, NULL, pPlayer->edict() );
 	WRITE_BYTE( iType );
-	WRITE_COORD( (float)iDx * 0.1f );
-	WRITE_COORD( (float)iDy * 0.1f );
+	// ref @0x1456d9: WRITE_COORD(Endo_roundto(ROUND(dx*0.1))) — the wire value is
+	// the pre-decimated int (~dx/10); the client READ_COORD+ftols it back.
+	// ROUND is FISTP round-nearest (mode 0xc) → lrintf matches for all signs.
+	WRITE_COORD( (float)SGTC_Endo_roundto( (int)lrintf( (double)iDx * 0.1 ) ) );
+	WRITE_COORD( (float)SGTC_Endo_roundto( (int)lrintf( (double)iDy * 0.1 ) ) );
 	MESSAGE_END();
 }
 
@@ -95,18 +105,25 @@ static BOOL SGTC_RadarTeamVisible( CBasePlayer *pViewer, CBaseEntity *pEnt )
 	return TRUE;
 }
 
-static BOOL SGTC_RadarPassesFilters( CBasePlayer *pPlayer, CBaseEntity *pEnt, int iDx, int iDy )
+static BOOL SGTC_RadarPassesFilters( CBasePlayer *pPlayer, CBaseEntity *pEnt, int iDx, int iDy, BOOL bZPass )
 {
-	const int kHalf = 90;		// ref Endo_roundtoi(9*5*2) @0x135604
-	const float kMaxDist = 929.0f;	// cmp 0x3a1 @0x13596c
+	const int kHalf = 90;		// ref Endo_roundtoi(9*5*2) @0x135604 → Endo_roundto(9*10)
+	const int kMaxDist = 929;	// ref Endo_distance3d (Manhattan) < 0x3a2 @0x1457d0
 
 	if( pEnt == pPlayer )
 		return FALSE;
 	if( abs( iDx ) <= kHalf && abs( iDy ) <= kHalf )
 		return FALSE;
 
-	Vector vecDelta( (float)iDx, (float)iDy, pEnt->pev->origin.z - pPlayer->pev->origin.z );
-	if( vecDelta.Length() > kMaxDist )
+	// ref uses Manhattan 3d distance, NOT vecDelta.Length().
+	if( abs( iDx ) + abs( iDy ) +
+	    abs( (int)( pEnt->pev->origin.z - pPlayer->pev->origin.z ) ) > kMaxDist )
+		return FALSE;
+
+	// ref: blip only when the entity passed the info_radar_block Z window
+	// (local_d) — entity above player under the nearest overhead blocker, or
+	// below player above the nearest underfoot blocker, or exactly level.
+	if( !bZPass )
 		return FALSE;
 
 	if( !SGTC_RadarTeamVisible( pPlayer, pEnt ) )
@@ -121,6 +138,36 @@ static BOOL SGTC_RadarPassesFilters( CBasePlayer *pPlayer, CBaseEntity *pEnt, in
 	return TRUE;
 }
 
+// ref @0x1455f4..0x1456c8 — nearest info_radar_block above the player sets the
+// ceiling distance; nearest below sets the floor distance. An entity passes the
+// Z window (local_d) when it is above the player but below the blocker, or
+// below the player but above the blocker, or exactly level with the player.
+static BOOL SGTC_RadarZPass( CBasePlayer *pPlayer, CBaseEntity *pEnt )
+{
+	float distAbove = 9000.0f;	// ref local_18
+	float distBelow = 9000.0f;	// ref local_14
+
+	CBaseEntity *pBlk = NULL;
+	while( ( pBlk = UTIL_FindEntityByClassname( pBlk, "info_radar_block" ) ) != NULL )
+	{
+		const float z = pBlk->pev->origin.z;
+		if( pPlayer->pev->origin.z < z && z - pPlayer->pev->origin.z < distAbove )
+			distAbove = z - pPlayer->pev->origin.z;
+		if( z < pPlayer->pev->origin.z && pPlayer->pev->origin.z - z < distBelow )
+			distBelow = pPlayer->pev->origin.z - z;
+	}
+
+	const float ez = pEnt->pev->origin.z;
+	const float pz = pPlayer->pev->origin.z;
+	if( pz < ez && ez - pz < distAbove )
+		return TRUE;
+	if( ez < pz && pz - ez < distBelow )
+		return TRUE;
+	if( ez == pz )
+		return TRUE;
+	return FALSE;
+}
+
 // ref CBasePlayer::RadarScan @0x135592
 void CBasePlayer::SGTC_RadarScan( void )
 {
@@ -133,11 +180,8 @@ void CBasePlayer::SGTC_RadarScan( void )
 		return;
 	}
 
-	if( pev->team <= 0 )
-	{
-		m_flRadarNext = gpGlobals->time + 0.25f;
-		return;
-	}
+	// NOTE: ref has NO viewer-team early-out — a live player on team 0 still
+	// scans; the team check lives in SGTC_RadarTeamVisible (alive-entity gate).
 
 	const int nClasses = (int)( sizeof( s_radarClasses ) / sizeof( s_radarClasses[0] ) );
 	for( int i = 0; i < nClasses; i++ )
@@ -148,10 +192,11 @@ void CBasePlayer::SGTC_RadarScan( void )
 		CBaseEntity *pEnt = NULL;
 		while( ( pEnt = UTIL_FindEntityByClassname( pEnt, pszClass ) ) != NULL )
 		{
-			const int iDx = (int)( pEnt->pev->origin.x - pev->origin.x );
-			const int iDy = (int)( pEnt->pev->origin.y - pev->origin.y );
+			const int iDx = (int)lrintf( pEnt->pev->origin.x - pev->origin.x ); // ref FISTP round-nearest
+			const int iDy = (int)lrintf( pEnt->pev->origin.y - pev->origin.y );
 
-			if( !SGTC_RadarPassesFilters( this, pEnt, iDx, iDy ) )
+			if( !SGTC_RadarPassesFilters( this, pEnt, iDx, iDy,
+				SGTC_RadarZPass( this, pEnt ) ) )
 				continue;
 
 			SGTC_SendRadarBlip( this, iType, iDx, iDy );

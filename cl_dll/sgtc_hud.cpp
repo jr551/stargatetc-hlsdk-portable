@@ -2060,15 +2060,16 @@ int CHudSgtc::MsgFunc_Progress( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// ref FUN_100770dd — Blip: type byte + 2 coords, ring slots 1..255.
+// ref shipped FUN_10074236 (via thunk @0x10070da5) — Blip: type byte + 2
+// READ_COORDs, ftol'd (NOT raw int16: FUN_100634a0 wraps the short read and the
+// result goes through __ftol → wire is the coord×8 short).
 int CHudSgtc::MsgFunc_Blip( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
 	BEGIN_READ( pbuf, iSize );
 	int type = READ_BYTE();
-	// ref FUN_100770dd — slot coords are wire int16 (×8), not READ_COORD float.
-	int rx = READ_SHORT();
-	int ry = READ_SHORT();
+	int rx = (int)READ_COORD();
+	int ry = (int)READ_COORD();
 
 	if( type == 0x32 )
 	{
