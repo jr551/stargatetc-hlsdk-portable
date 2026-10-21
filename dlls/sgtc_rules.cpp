@@ -2239,14 +2239,9 @@ void CStargateTeamDM::Think( void )
 	// and (mode 0 or post-stinger: mode>=1, hasplayed, time>endtround).
 	if( SGTC_ThinkRunsMainRoundBody() )
 	{
-		SGTC_ThinkPlayMusic();	// @0x1945b7..0x194b2b
-		SGTC_ThinkEndtroundRollover();
-		if( m_flSgtcRoundEnd != 0.0f && gpGlobals->time >= m_flSgtcRoundEnd )
-		{
-			m_flSgtcRoundEnd = 0.0f;
-			EndRound();
+		if( SGTC_ThinkPlayMusic() )	// mode 0 fraglimit may call +0x108
 			return;
-		}
+		SGTC_ThinkEndtroundRollover();
 		SGTC_ThinkRefreshTimeleftCvar();	// ref @0x1929ce local_bc / Think()::last_time
 	}
 	else

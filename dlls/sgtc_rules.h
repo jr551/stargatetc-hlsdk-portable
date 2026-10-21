@@ -129,7 +129,8 @@ protected:
 	void SGTC_SendTeamNames( CBasePlayer *pPlayer );
 	edict_t *SGTC_FindTeamSpawn( const char *pszClassname );
 	void SGTC_NewRoundCommon( BOOL bCaptureMode );	// shared NewRound body (sgtc_round.cpp)
-	void SGTC_ThinkPlayMusic( void );	// ref Think @0x1945b7..0x194b2b PlayMusic paths
+	BOOL SGTC_ThinkGameMode0( void );	// ref Think @0x1929ce mode-0 fraglimit + elimination
+	BOOL SGTC_ThinkPlayMusic( void );	// ref Think @0x1945b7..0x194b2b PlayMusic paths (modes 1/4)
 	void SGTC_ThinkGameMode34Side( void );	// ref Think @0x1929ce mode 3/4 tails
 	void SGTC_ThinkEndtroundRollover( void );	// ref Think endtround+hasplayed tails
 

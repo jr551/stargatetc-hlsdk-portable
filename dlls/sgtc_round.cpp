@@ -640,130 +640,173 @@ void CStargateTeamDM::SGTC_ThinkGameMode34Side( void )
 	}
 }
 
-// Think PlayMusic paths — ref CStargateTeamDM::Think @0x1929ce (stingers only).
-// Mode 0 elimination: @0x1945b7..0x194642 (endtround +4s). Modes 1/4 tickets:
-// @0x194a07..0x194b2b (endtround +6s). Goal() keeps separate @0x18b650 paths.
+// Think mode 0 — ref @0x1929ce gated body: mp_fraglimit on team_scores → +0x108,
+// elimination tick, then +0x724/+0x728 → +0x38 or PlayMusic stingers (+4s endtround).
 // ---------------------------------------------------------------------------
-void CStargateTeamDM::SGTC_ThinkPlayMusic( void )
+BOOL CStargateTeamDM::SGTC_ThinkGameMode0( void )
 {
-	if( sgtc_GameModeSet == 0 )
+	extern cvar_t fraglimit;
+	extern cvar_t fragsleft;
+
+	float flFragLimit = fraglimit.value;
+	if( flFragLimit != 0.0f )
 	{
-		int totalClients = 0;
-		int aliveTeamIdx[32];
-		int presentTeamIdx[32];
-		int nAliveTeams = 0;
-		int nPresentTeams = 0;
-		for( int t = 0; t < 32; t++ )
+		int iBestRemain = 9999;
+		for( int t = 0; t < m_iSGTCTeamCount; t++ )
 		{
-			aliveTeamIdx[t] = -5;
-			presentTeamIdx[t] = -5;
-		}
-
-		for( int i = 1; i <= gpGlobals->maxClients; i++ )
-		{
-			CBasePlayer *pPlayer = (CBasePlayer *)UTIL_PlayerByIndex( i );
-			if( !pPlayer || !IsValidTeam( pPlayer->TeamID() ) )
-				continue;
-			totalClients++;
-			if( !pPlayer->IsAlive() || pPlayer->m_bSgtcBadGuy )
-				continue;
-
-			int iTeam = GetTeamIndex( pPlayer->TeamID() );
-			if( iTeam < 0 )
-				continue;
-
-			BOOL bNewAlive = TRUE;
-			for( int a = 0; a < nAliveTeams; a++ )
+			if( flFragLimit <= (float)m_iSGTCTeamScores[t] )
 			{
-				if( aliveTeamIdx[a] == iTeam )
-				{
-					bNewAlive = FALSE;
-					break;
-				}
+				GoToIntermission();
+				return TRUE;
 			}
-			if( bNewAlive )
-				aliveTeamIdx[nAliveTeams++] = iTeam;
-
-			BOOL bNewPresent = TRUE;
-			for( int p = 0; p < nPresentTeams; p++ )
-			{
-				if( presentTeamIdx[p] == iTeam )
-				{
-					bNewPresent = FALSE;
-					break;
-				}
-			}
-			if( bNewPresent )
-				presentTeamIdx[nPresentTeams++] = iTeam;
+			int iRemain = SGTC_Round_roundf( flFragLimit - (float)m_iSGTCTeamScores[t] );
+			if( iRemain < iBestRemain )
+				iBestRemain = iRemain;
 		}
+		static int s_lastFragsRemain;
+		if( iBestRemain != s_lastFragsRemain )
+			g_engfuncs.pfnCvar_DirectSet( &fragsleft, UTIL_VarArgs( "%i", iBestRemain ) );
+		s_lastFragsRemain = iBestRemain;
+	}
 
-		if( nPresentTeams < 2 && m_bRoundOver != 0 )
-			m_bRoundOver = 1;
-		if( nPresentTeams > 1 )
-			m_bRoundOver = 2;
+	int totalClients = 0;
+	int aliveTeamIdx[32];
+	int presentTeamIdx[32];
+	int nAliveTeams = 0;
+	int nPresentTeams = 0;
+	for( int t = 0; t < 32; t++ )
+	{
+		aliveTeamIdx[t] = -5;
+		presentTeamIdx[t] = -5;
+	}
 
-		if( m_bRoundOver == 1 && nAliveTeams > 1 )
-		{
-			NewRound();
-			return;
-		}
+	for( int i = 1; i <= gpGlobals->maxClients; i++ )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)UTIL_PlayerByIndex( i );
+		if( !pPlayer || !IsValidTeam( pPlayer->TeamID() ) )
+			continue;
+		totalClients++;
+		if( !pPlayer->IsAlive() || pPlayer->m_bSgtcBadGuy )
+			continue;
 
-		if( ( m_bRoundOver < 2 || nAliveTeams > 1 ) &&
-			( nAliveTeams != 0 || totalClients == 0 ) )
+		int iTeam = GetTeamIndex( pPlayer->TeamID() );
+		if( iTeam < 0 )
+			continue;
+
+		BOOL bNewAlive = TRUE;
+		for( int a = 0; a < nAliveTeams; a++ )
 		{
-			if( m_iSgtcWinScoreSide == 0 )
-				m_iSgtcRoundTicks = 0;
-		}
-		else
-		{
-			if( nAliveTeams != 0 )
+			if( aliveTeamIdx[a] == iTeam )
 			{
-				m_iSgtcFirstTicks = aliveTeamIdx[0];
-				m_iSgtcWinPending = 1;
-			}
-			if( m_iSgtcRoundTicks == 0 )
-			{
-				m_flSgtcRoundTickStart = gpGlobals->time;
-				m_iSgtcRoundTicks = 1;
+				bNewAlive = FALSE;
+				break;
 			}
 		}
+		if( bNewAlive )
+			aliveTeamIdx[nAliveTeams++] = iTeam;
 
-		if( m_iSgtcRoundTicks != 0 &&
-			gpGlobals->time - m_flSgtcRoundTickStart < 5.0f &&
-			m_flSgtcRoundTime + ( gpGlobals->time - m_flSgtcRoundEnd ) > 20.0f )
+		BOOL bNewPresent = TRUE;
+		for( int p = 0; p < nPresentTeams; p++ )
 		{
-			if( m_iSgtcWinScoreSide == 1 )
-				m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
-			else if( m_iSgtcWinScoreSide == 2 )
-				m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
-
-			if( m_iSgtcWinPending == 0 || m_iSgtcFirstTicks == -5 )
+			if( presentTeamIdx[p] == iTeam )
 			{
-				if( sgtc_hasplayed == 0 )
-				{
-					SGTC_PlayMusic( 2 );
-					sgtc_endtround = gpGlobals->time + 4.0f;
-					sgtc_hasplayed = 1;
-				}
+				bNewPresent = FALSE;
+				break;
 			}
-			else if( sgtc_hasplayed == 0 )
+		}
+		if( bNewPresent )
+			presentTeamIdx[nPresentTeams++] = iTeam;
+	}
+
+	if( nPresentTeams < 2 && m_bRoundOver != 0 )
+		m_bRoundOver = 1;
+	if( nPresentTeams > 1 )
+		m_bRoundOver = 2;
+
+	if( m_bRoundOver == 1 && nAliveTeams > 1 )
+	{
+		NewRound();
+		return FALSE;
+	}
+
+	if( ( m_bRoundOver < 2 || nAliveTeams > 1 ) &&
+		( nAliveTeams != 0 || totalClients == 0 ) )
+	{
+		if( m_iSgtcWinScoreSide == 0 )
+			m_iSgtcRoundTicks = 0;
+	}
+	else
+	{
+		if( nAliveTeams != 0 )
+		{
+			m_iSgtcFirstTicks = aliveTeamIdx[0];
+			m_iSgtcWinPending = 1;
+		}
+		if( m_iSgtcRoundTicks == 0 )
+		{
+			m_flSgtcRoundTickStart = gpGlobals->time;
+			m_iSgtcRoundTicks = 1;
+		}
+	}
+
+	const BOOL bRoundWindow =
+		( m_flSgtcRoundTime + ( gpGlobals->time - m_flSgtcRoundEnd ) > 20.0f );
+	const BOOL bRoundDue =
+		( m_flSgtcRoundEnd != 0.0f && gpGlobals->time >= m_flSgtcRoundEnd &&
+		  m_flSgtcRoundTime != 0.0f );
+	const BOOL bElimPastTick =
+		( m_iSgtcRoundTicks != 0 &&
+		  gpGlobals->time - m_flSgtcRoundTickStart > 5.0f );
+
+	if( ( bRoundDue || ( bElimPastTick && bRoundWindow ) ) )
+	{
+		EndRound();
+	}
+	else if( m_iSgtcRoundTicks != 0 &&
+		gpGlobals->time - m_flSgtcRoundTickStart < 5.0f && bRoundWindow )
+	{
+		if( m_iSgtcWinScoreSide == 1 )
+			m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+		else if( m_iSgtcWinScoreSide == 2 )
+			m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+
+		if( m_iSgtcWinPending == 0 || m_iSgtcFirstTicks == -5 )
+		{
+			if( sgtc_hasplayed == 0 )
 			{
-				if( m_iSgtcFirstTicks == 0 )
-				{
-					sgtc_endtround = gpGlobals->time + 4.0f;
-					m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
-					SGTC_PlayMusic( 0 );
-				}
-				if( m_iSgtcFirstTicks == 1 )
-				{
-					sgtc_endtround = gpGlobals->time + 4.0f;
-					m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
-					SGTC_PlayMusic( 1 );
-				}
+				SGTC_PlayMusic( 2 );
+				sgtc_endtround = gpGlobals->time + 4.0f;
 				sgtc_hasplayed = 1;
 			}
 		}
+		else if( sgtc_hasplayed == 0 )
+		{
+			if( m_iSgtcFirstTicks == 0 )
+			{
+				sgtc_endtround = gpGlobals->time + 4.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Torri" )]++;
+				SGTC_PlayMusic( 0 );
+			}
+			if( m_iSgtcFirstTicks == 1 )
+			{
+				sgtc_endtround = gpGlobals->time + 4.0f;
+				m_iSGTCTeamScores[GetTeamIndex( "Goa'uld" )]++;
+				SGTC_PlayMusic( 1 );
+			}
+			sgtc_hasplayed = 1;
+		}
 	}
+
+	return FALSE;
+}
+
+// Think PlayMusic paths — ref @0x1929ce ticket stingers (modes 1/4). Mode 0 is
+// SGTC_ThinkGameMode0(). Goal() keeps separate @0x18b650 paths.
+// ---------------------------------------------------------------------------
+BOOL CStargateTeamDM::SGTC_ThinkPlayMusic( void )
+{
+	if( sgtc_GameModeSet == 0 )
+		return SGTC_ThinkGameMode0();
 
 	SGTC_ThinkGameMode34Side();
 
@@ -803,6 +846,7 @@ void CStargateTeamDM::SGTC_ThinkPlayMusic( void )
 			sgtc_hasplayed = 1;
 		}
 	}
+	return FALSE;
 }
 
 // ---------------------------------------------------------------------------
