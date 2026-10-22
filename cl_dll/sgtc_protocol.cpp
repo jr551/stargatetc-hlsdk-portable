@@ -232,15 +232,55 @@ static void SGTC_EventFallback( struct event_args_s *args, int playSound )
 	(void)idx;
 }
 
+// ref client.dll — shield.sc is a forcefield FX hook, not a muzzle/brass event.
+#define SGTC_EV_LIST_FALLBACK \
+	X( EV_SGTC_Batsup, "events/batsup.sc" ) \
+	X( EV_SGTC_Batsup2, "events/batsup2.sc" ) \
+	X( EV_SGTC_BeamFire, "events/beam_fire.sc" ) \
+	X( EV_SGTC_BeamStop, "events/beam_stop.sc" ) \
+	X( EV_SGTC_BigLance, "events/biglance.sc" ) \
+	X( EV_SGTC_Coujaf, "events/coujaf.sc" ) \
+	X( EV_SGTC_Couteau, "events/couteau.sc" ) \
+	X( EV_SGTC_Eagle, "events/eagle.sc" ) \
+	X( EV_SGTC_Invis, "events/invis.sc" ) \
+	X( EV_SGTC_Lance, "events/lance.sc" ) \
+	X( EV_SGTC_Lance2, "events/lance2.sc" ) \
+	X( EV_SGTC_Larve, "events/larve.sc" ) \
+	X( EV_SGTC_M16, "events/m16.sc" ) \
+	X( EV_SGTC_Main, "events/main.sc" ) \
+	X( EV_SGTC_Main2, "events/main2.sc" ) \
+	X( EV_SGTC_MainC, "events/mainc.sc" ) \
+	X( EV_SGTC_MainS, "events/mains.sc" ) \
+	X( EV_SGTC_P90, "events/p90.sc" ) \
+	X( EV_SGTC_P90L, "events/p90l.sc" ) \
+	X( EV_SGTC_PSG1, "events/psg1.sc" ) \
+	X( EV_SGTC_Reetou, "events/reetou.sc" ) \
+	X( EV_SGTC_Reetou2, "events/reetou2.sc" ) \
+	X( EV_SGTC_Spas, "events/spas.sc" ) \
+	X( EV_SGTC_Spas2, "events/spas2.sc" ) \
+	X( EV_SGTC_Tac, "events/tac.sc" ) \
+	X( EV_SGTC_Usas, "events/usas.sc" ) \
+	X( EV_SGTC_ZatA, "events/zata.sc" ) \
+	X( EV_SGTC_ZatArc, "events/zatarc.sc" ) \
+	X( EV_SGTC_ZatB, "events/zatb.sc" ) \
+	X( EV_SGTC_Zat, "events/zat.sc" )
+
 extern "C"
 {
+void EV_SGTC_Shield( struct event_args_s *args )
+{
+	if( EV_IsLocal( args->entindex ) )
+		gEngfuncs.pEventAPI->EV_WeaponAnimation( 1, 1 );
+	(void)args;
+}
+
 #define X( fn, script ) \
 	void fn( struct event_args_s *args ) \
 	{ \
 		SGTC_EventFallback( args, 1 ); \
 		(void)sizeof( script ); \
 	}
-SGTC_EV_LIST
+SGTC_EV_LIST_FALLBACK
 #undef X
 }
 

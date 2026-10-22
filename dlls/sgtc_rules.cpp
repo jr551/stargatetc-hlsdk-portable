@@ -1055,10 +1055,10 @@ void CStargateTeamDM::PlayerSpawn( CBasePlayer *pPlayer )
 					pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[i] );
 			}
 		}
-		// ref: armed shield state + !(pev->weapons bit 9) grants WPLIST[26].
+		// ref: armed shield state + !(pev->weapons bit 9) grants WPLIST[0x11].
 		if( pPlayer->m_iSgtcGondState != 0 &&
 			( ( pPlayer->pev->weapons >> 9 ) & 1 ) != 1 )
-			pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[0x1a] );	// WPLIST._68_4_
+			pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[0x11] );
 		if( pPlayer->pev->team == 1 )
 			pPlayer->GiveNamedItem( "weapon_coujaf" );	// Goa'uld melee
 		else
@@ -2805,10 +2805,10 @@ void CStargateTeamCP::PlayerSpawn( CBasePlayer *pPlayer )
 					pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[i] );	// ref WPLISTB[i]
 			}
 		}
-		// ref: armed shield state + !(pev->weapons bit 9) grants WPLISTB[26].
+		// ref: armed shield state + !(pev->weapons bit 9) grants WPLISTB[0x11].
 		if( pPlayer->m_iSgtcGondState != 0 &&
 			( ( pPlayer->pev->weapons >> 9 ) & 1 ) != 1 )
-			pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[0x1a] );
+			pPlayer->GiveNamedItem( s_SgtcSpawnWeapons[0x11] );
 		// ref: melee only when solid && !observer.
 		if( !pPlayer->IsObserver() && pPlayer->pev->solid != 0 )
 		{

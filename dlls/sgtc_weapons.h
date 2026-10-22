@@ -395,11 +395,14 @@ class CInvis : public CBasePlayerWeapon
 public:
 	SGTC_DECLARE_WEAPON();
 	void EXPORT InvisThink( void );
+	void Holster( int skiplocal = 0 );
 	int iItemSlot( void ) { return 3; }
 
+	float	m_flInvisOnTime;	// ref weapon +0x200
+	float	m_flShieldLoadTime;	// ref weapon +0x204 — shield raise latch (0 = idle)
 	char	m_bInvisActive;		// ref weapon +0x208
-	float	m_flInvisLatchA;	// ref weapon +0x134
-	float	m_flInvisLatchB;	// ref weapon +0x138
+	unsigned short m_usInvisFire;	// ref weapon +0x20a
+	unsigned short m_usShieldFire;	// ref weapon +0x20c — events/shield.sc
 };
 
 class CLarve : public CBasePlayerWeapon
