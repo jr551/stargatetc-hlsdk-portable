@@ -275,10 +275,13 @@ class CCoujaf : public CBasePlayerWeapon
 public:
 	SGTC_DECLARE_WEAPON();
 	void EXPORT SwingAgain( void );
+	void Smack( void );
 	int Swing( int fFirst );
+	void Holster( int skiplocal = 0 );
 	int iItemSlot( void ) { return 1; }
-	int m_iSwing;
-	TraceResult m_trHit;
+	int m_iSwing;			// ref this+0xe4 follow-up swing latch
+	EHANDLE m_hSnagTarget;		// ref this+0x200 marked enemy player
+	TraceResult m_trHit;		// ref this+0x204
 private:
 	unsigned short m_usFire;
 };
