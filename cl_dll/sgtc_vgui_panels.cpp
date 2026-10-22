@@ -1933,7 +1933,28 @@ void CSgtcPackSelPanel::Reset( void )
 	{
 		m_pPackButton[i]->setArmed( false );
 		m_pPackButton[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
-		m_pPackButton[i]->setEnabled( true );	// ref: enabled while i < +0x93
+		// ref Update (0x100295be..0x10029a41 + 2-pack branch @0x1002a209):
+		// pack buttons beyond the class's pack count are not armed. The
+		// count is per team/class — count the non-empty preset rows for
+		// the local player; unknown team/class keeps all four enabled.
+		int iPacks = SGTC_PACKSEL_COUNT;
+		cl_entity_t *pLocal = gEngfuncs.GetLocalPlayer();
+		if ( pLocal && pLocal->index > 0 && pLocal->index <= MAX_PLAYERS )
+		{
+			int iTeam = g_PlayerExtraInfo[pLocal->index].teamnumber;
+			int iClass = g_PlayerExtraInfo[pLocal->index].playerclass - 1;
+			if ( iTeam >= 1 && iTeam <= 2 && iClass >= 0 && iClass <= 4 )
+			{
+				iPacks = 0;
+				for ( int p = 0; p < SGTC_PACKSEL_COUNT; p++ )
+				{
+					int iTmp[SGTC_PACK_MAX_SLOTS];
+					if ( SgtcPack_GetSlots( iTeam, iClass, p + 1, iTmp ) > 0 )
+						iPacks++;
+				}
+			}
+		}
+		m_pPackButton[i]->setEnabled( i < iPacks );	// ref: enabled while i < +0x93
 	}
 	m_pInfo->setText( "" );
 }
