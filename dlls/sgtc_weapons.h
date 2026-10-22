@@ -137,7 +137,8 @@ class CM92s : public CBasePlayerWeapon
 public:
 	SGTC_DECLARE_WEAPON();
 	int iItemSlot( void ) { return 3; }
-	void M92sFire( float flSpread, float flCycleTime );
+	void Holster( int skiplocal = 0 );
+	void Fire( float flSpread, float flCycleTime, int iUnused );
 private:
 	unsigned short m_usFire;
 };

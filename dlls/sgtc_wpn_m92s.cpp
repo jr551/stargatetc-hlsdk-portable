@@ -11,8 +11,8 @@
 #include "sgtc_weapons.h"
 
 // ===========================================================================
-// CM92s - "M92S" heavy pistol. Analogue: python.cpp (single-shot hitscan).
-// Event: events/eagle.sc.
+// CM92s - Beretta M92S pistol. Ref: CM92s::* @ ref/stc_i386.so (Fire @0xd89ee).
+// Event: events/eagle.sc (shared desert-eagle script; client EV_SGTC_Eagle).
 // ===========================================================================
 
 LINK_ENTITY_TO_CLASS( weapon_m92s, CM92s );
@@ -53,25 +53,60 @@ BOOL CM92s::Deploy( void )
 	return SGTC_DEPLOY( 2, "models/v_m92s.mdl", "models/p_m92s.mdl", SGTC_DRAW, "onehanded" );
 }
 
-void CM92s::M92sFire( float flSpread, float flCycleTime )
+void CM92s::Holster( int skiplocal )
 {
-	if( m_iClip <= 0 )
+	m_pPlayer->m_flNextAttack = UTIL_WeaponTimeBase() + 0.5f;
+	SendWeaponAnim( 3, 1 );	// ref @0xd9070 — seq 3, body 1
+}
+
+void CM92s::Fire( float flSpread, float flCycleTime, int iUnused )
+{
+	(void)iUnused;
+
+	if( m_flTimeWeaponIdle > UTIL_WeaponTimeBase() )
 	{
-		PlayEmptySound();
-		m_flNextPrimaryAttack = 0.15;
+		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 0.15f;
 		return;
 	}
 
-	m_pPlayer->m_iWeaponVolume = NORMAL_GUN_VOLUME;
-	m_pPlayer->m_iWeaponFlash = NORMAL_GUN_FLASH;
+	if( m_iClip <= 0 )
+	{
+		if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] > 0 )
+			Reload();
+		else
+		{
+			PlayEmptySound();
+			m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + 0.15f;
+		}
+		return;
+	}
+
 	m_iClip--;
 	m_pPlayer->pev->effects = (int)( m_pPlayer->pev->effects ) | EF_MUZZLEFLASH;
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
+	m_pPlayer->SnagInvis();
+
+	if( m_pPlayer->pev->iuser1 == 1 )
+	{
+		m_pPlayer->m_iWeaponVolume = QUIET_GUN_VOLUME;
+		m_pPlayer->m_iWeaponFlash = DIM_GUN_FLASH;
+	}
+	else
+	{
+		m_pPlayer->m_iWeaponVolume = NORMAL_GUN_VOLUME;
+		m_pPlayer->m_iWeaponFlash = NORMAL_GUN_FLASH;
+	}
+
+	Vector vecSpread;
+	if( m_pPlayer->pev->flags & FL_DUCKING )
+		vecSpread = Vector( 0.05f, 0.05f, 0.05f );
+	else
+		vecSpread = Vector( flSpread, flSpread, flSpread );
 
 	Vector vecSrc = m_pPlayer->GetGunPosition();
 	Vector vecAiming = m_pPlayer->GetAutoaimVector( AUTOAIM_5DEGREES );
 	Vector vecDir = m_pPlayer->FireBulletsPlayer( 1, vecSrc, vecAiming,
-		Vector( flSpread, flSpread, flSpread ), 8192, SGTC_BULLET_M92S, 0, 15,
+		vecSpread, 8192, SGTC_BULLET_M92S, 0, 15,
 		m_pPlayer->pev, m_pPlayer->random_seed );
 
 	PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), m_usFire,
@@ -89,19 +124,11 @@ void CM92s::M92sFire( float flSpread, float flCycleTime )
 void CM92s::PrimaryAttack( void )
 {
 	if( m_pPlayer->pev->waterlevel == 3 )
-	{
-		PlayEmptySound();
-		m_flNextPrimaryAttack = 0.15;
 		return;
-	}
 
-	M92sFire( 0.01, 0.5 );
+	Fire( 0.01f, 0.5f, 0 );
 }
 
 SGTC_NO_SECONDARY( CM92s )
 SGTC_WEAPON_RELOAD( CM92s, 12 )
 SGTC_WEAPON_IDLE( CM92s )
-
-// Reference (ref/stc_i386.so) maps weapon_mp5 and weapon_9mmAR to stock
-// CMP5 (mp5.cpp) and weapon_handgrenade to stock CHandGrenade; stock
-// registrations stand, so CSGTCMP5 is removed (was duplicate factory).

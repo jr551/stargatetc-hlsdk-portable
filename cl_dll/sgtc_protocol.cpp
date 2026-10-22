@@ -26,9 +26,18 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "const.h"
+#include "entity_state.h"
+#include "cl_entity.h"
+#include "entity_types.h"
+#include "usercmd.h"
+#include "pm_defs.h"
 #include "parsemsg.h"
 #include "event_api.h"
+#include "event_args.h"
 #include "eventscripts.h"
+#include "ev_hldm.h"
+#include "r_efx.h"
 #include "sgtc_protocol.h"
 #include "sgtc_hud.h"
 #include "sgtc_env.h"
@@ -232,15 +241,99 @@ static void SGTC_EventFallback( struct event_args_s *args, int playSound )
 	(void)idx;
 }
 
+// Events with dedicated ref handlers (no generic muzzle/brass fallback).
+#define SGTC_EV_LIST_FALLBACK \
+	X( EV_SGTC_Batsup, "events/batsup.sc" ) \
+	X( EV_SGTC_Batsup2, "events/batsup2.sc" ) \
+	X( EV_SGTC_BeamFire, "events/beam_fire.sc" ) \
+	X( EV_SGTC_BeamStop, "events/beam_stop.sc" ) \
+	X( EV_SGTC_BigLance, "events/biglance.sc" ) \
+	X( EV_SGTC_Coujaf, "events/coujaf.sc" ) \
+	X( EV_SGTC_Couteau, "events/couteau.sc" ) \
+	X( EV_SGTC_Invis, "events/invis.sc" ) \
+	X( EV_SGTC_Lance, "events/lance.sc" ) \
+	X( EV_SGTC_Lance2, "events/lance2.sc" ) \
+	X( EV_SGTC_Larve, "events/larve.sc" ) \
+	X( EV_SGTC_M16, "events/m16.sc" ) \
+	X( EV_SGTC_Main, "events/main.sc" ) \
+	X( EV_SGTC_Main2, "events/main2.sc" ) \
+	X( EV_SGTC_MainC, "events/mainc.sc" ) \
+	X( EV_SGTC_MainS, "events/mains.sc" ) \
+	X( EV_SGTC_P90, "events/p90.sc" ) \
+	X( EV_SGTC_P90L, "events/p90l.sc" ) \
+	X( EV_SGTC_PSG1, "events/psg1.sc" ) \
+	X( EV_SGTC_Reetou, "events/reetou.sc" ) \
+	X( EV_SGTC_Reetou2, "events/reetou2.sc" ) \
+	X( EV_SGTC_Shield, "events/shield.sc" ) \
+	X( EV_SGTC_Spas, "events/spas.sc" ) \
+	X( EV_SGTC_Spas2, "events/spas2.sc" ) \
+	X( EV_SGTC_Tac, "events/tac.sc" ) \
+	X( EV_SGTC_Usas, "events/usas.sc" ) \
+	X( EV_SGTC_ZatA, "events/zata.sc" ) \
+	X( EV_SGTC_ZatArc, "events/zatarc.sc" ) \
+	X( EV_SGTC_ZatB, "events/zatb.sc" ) \
+	X( EV_SGTC_Zat, "events/zat.sc" )
+
 extern "C"
 {
+void V_PunchAxis( int axis, float punch );
+
+// ref client.dll @0x10008e13 — eagle.sc (weapon_m92s server event)
+void EV_SGTC_Eagle( struct event_args_s *args )
+{
+	int idx = args->entindex;
+	vec3_t origin, angles, velocity, forward, right, up;
+	vec3_t vecSrc, vecAiming, ShellVelocity, ShellOrigin;
+	int shell;
+	static const char *sounds[3] =
+	{
+		"weapons/pistol-01.wav",
+		"weapons/pistol-02.wav",
+		"weapons/pistol-03.wav"
+	};
+	int snd;
+
+	VectorCopy( args->origin, origin );
+	VectorCopy( args->angles, angles );
+	VectorCopy( args->velocity, velocity );
+
+	AngleVectors( angles, forward, right, up );
+
+	shell = gEngfuncs.pEventAPI->EV_FindModelIndex( "models/pshell.mdl" );
+
+	if( EV_IsLocal( idx ) )
+	{
+		EV_MuzzleFlash();
+		gEngfuncs.pEventAPI->EV_WeaponAnimation( args->bparam1 ? 6 : 2, 1 );
+		V_PunchAxis( 0, -1.2f );
+	}
+
+	EV_GetDefaultShellInfo( args, origin, velocity, ShellVelocity, ShellOrigin,
+		forward, right, up, 20.0f, -12.0f, 4.0f );
+
+	EV_EjectBrass( ShellOrigin, ShellVelocity, angles[YAW], shell, TE_BOUNCE_SHELL );
+
+	snd = (int)gEngfuncs.pfnRandomFloat( 0, 2 );
+	if( snd >= 0 && snd <= 2 )
+		gEngfuncs.pEventAPI->EV_PlaySound( idx, origin, CHAN_WEAPON, sounds[snd],
+			gEngfuncs.pfnRandomFloat( 0.95f, 1.0f ), 0.8f, 0,
+			98 + gEngfuncs.pfnRandomLong( 0, 3 ) );
+
+	EV_GetGunPosition( args, vecSrc, origin );
+
+	VectorCopy( forward, vecAiming );
+
+	EV_HLDM_FireBullets( idx, forward, right, up, 1, vecSrc, vecAiming,
+		8192.0f, BULLET_PLAYER_9MM, 0, NULL, args->fparam1, args->fparam2 );
+}
+
 #define X( fn, script ) \
 	void fn( struct event_args_s *args ) \
 	{ \
 		SGTC_EventFallback( args, 1 ); \
 		(void)sizeof( script ); \
 	}
-SGTC_EV_LIST
+SGTC_EV_LIST_FALLBACK
 #undef X
 }
 
