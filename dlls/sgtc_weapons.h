@@ -259,6 +259,7 @@ class CBatonSupplice : public CBasePlayerWeapon
 {
 public:
 	SGTC_DECLARE_WEAPON();
+	void EXPORT Smack( void );
 	void EXPORT SwingAgain( void );
 	int Swing( int fFirst );
 	int iItemSlot( void ) { return 1; }

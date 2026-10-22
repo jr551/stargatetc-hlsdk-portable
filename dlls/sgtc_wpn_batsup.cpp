@@ -13,9 +13,21 @@
 // ===========================================================================
 // CBatonSupplice - "Baton de supplice" melee. Analogue: crowbar.cpp.
 // Events: events/batsup.sc (first swing) / events/batsup2.sc (follow-up).
+// Ref: CBatonSupplice::Swing @0xb7700, Smack @0xb76d2 (DecalGunshot type 12).
 // ===========================================================================
 
 LINK_ENTITY_TO_CLASS( weapon_batsup, CBatonSupplice );
+
+static void sgtcHullIntersect( const Vector &vecSrc, TraceResult &tr,
+	const float *mins, const float *maxs, edict_t *pEntity )
+{
+	TraceResult tmpTrace;
+	Vector vecHullEnd = tr.vecEndPos;
+	Vector vecEnd = vecSrc + ( vecHullEnd - vecSrc ) * 2.0f;
+	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, pEntity, &tmpTrace );
+	if( tmpTrace.flFraction < 1.0f )
+		tr = tmpTrace;
+}
 
 void CBatonSupplice::Spawn( void )
 {
@@ -58,8 +70,18 @@ void CBatonSupplice::Holster( int skiplocal )
 	SendWeaponAnim( SGTC_HOLSTER );
 }
 
+void CBatonSupplice::Smack( void )
+{
+	DecalGunshot( &m_trHit, BULLET_PLAYER_CROWBAR );
+}
+
 void CBatonSupplice::PrimaryAttack( void )
 {
+	if( m_pPlayer->pev->waterlevel == 3 )
+		return;
+	if( m_pPlayer->IsObserver() )
+		return;
+
 	if( !Swing( 1 ) )
 	{
 #ifndef CLIENT_DLL
@@ -85,9 +107,25 @@ int CBatonSupplice::Swing( int fFirst )
 
 	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( m_pPlayer->pev ), &tr );
 
+#ifndef CLIENT_DLL
+	if( tr.flFraction >= 1.0 )
+	{
+		UTIL_TraceHull( vecSrc, vecEnd, dont_ignore_monsters, head_hull, ENT( m_pPlayer->pev ), &tr );
+		if( tr.flFraction < 1.0 )
+		{
+			CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
+			if( !pHit || pHit->IsBSPModel() )
+				sgtcHullIntersect( vecSrc, tr, (float *)VEC_DUCK_HULL_MIN,
+					(float *)VEC_DUCK_HULL_MAX, m_pPlayer->edict() );
+			vecEnd = tr.vecEndPos;
+		}
+	}
+#endif
+
 	if( fFirst )
 	{
-		PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), m_usFire,
+		unsigned short usEvent = m_iSwing ? m_usFire2 : m_usFire;
+		PLAYBACK_EVENT_FULL( SGTC_EVENT_FLAGS, m_pPlayer->edict(), usEvent,
 			0.0, (float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
 	}
 
@@ -110,20 +148,38 @@ int CBatonSupplice::Swing( int fFirst )
 		if( pEntity )
 		{
 			ClearMultiDamage();
-			pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar,
-				gpGlobals->v_forward, &tr, DMG_CLUB );
+			if( ( m_flNextPrimaryAttack + 1.0f < UTIL_WeaponTimeBase() ) || g_pGameRules->IsMultiplayer() )
+				pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar, gpGlobals->v_forward, &tr, DMG_CLUB );
+			else
+				pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar * 0.5f, gpGlobals->v_forward, &tr, DMG_CLUB );
 			ApplyMultiDamage( m_pPlayer->pev, m_pPlayer->pev );
 
 			if( pEntity->Classify() != CLASS_NONE && pEntity->Classify() != CLASS_MACHINE )
 			{
-				EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody1.wav", 1, ATTN_NORM );
+				switch( RANDOM_LONG( 0, 2 ) )
+				{
+				case 0:
+					EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody1.wav", 1, ATTN_NORM );
+					break;
+				case 1:
+					EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody2.wav", 1, ATTN_NORM );
+					break;
+				default:
+					EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody3.wav", 1, ATTN_NORM );
+					break;
+				}
 			}
 		}
+
+		m_trHit = tr;
+		Smack();
 #endif
 
 		if( fFirst )
 			m_flNextPrimaryAttack = GetNextAttackDelay( 0.5 );
 	}
+
+	m_iSwing = 1;
 
 	if( !fDidHit )
 	{

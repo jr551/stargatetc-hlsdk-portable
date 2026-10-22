@@ -232,15 +232,70 @@ static void SGTC_EventFallback( struct event_args_s *args, int playSound )
 	(void)idx;
 }
 
+// ref client.dll @0x10008934 / @0x10008a99 — swing sound + view anim only (no muzzle/brass).
+#define SGTC_EV_LIST_FALLBACK \
+	X( EV_SGTC_BeamFire, "events/beam_fire.sc" ) \
+	X( EV_SGTC_BeamStop, "events/beam_stop.sc" ) \
+	X( EV_SGTC_BigLance, "events/biglance.sc" ) \
+	X( EV_SGTC_Coujaf, "events/coujaf.sc" ) \
+	X( EV_SGTC_Couteau, "events/couteau.sc" ) \
+	X( EV_SGTC_Eagle, "events/eagle.sc" ) \
+	X( EV_SGTC_Invis, "events/invis.sc" ) \
+	X( EV_SGTC_Lance, "events/lance.sc" ) \
+	X( EV_SGTC_Lance2, "events/lance2.sc" ) \
+	X( EV_SGTC_Larve, "events/larve.sc" ) \
+	X( EV_SGTC_M16, "events/m16.sc" ) \
+	X( EV_SGTC_Main, "events/main.sc" ) \
+	X( EV_SGTC_Main2, "events/main2.sc" ) \
+	X( EV_SGTC_MainC, "events/mainc.sc" ) \
+	X( EV_SGTC_MainS, "events/mains.sc" ) \
+	X( EV_SGTC_P90, "events/p90.sc" ) \
+	X( EV_SGTC_P90L, "events/p90l.sc" ) \
+	X( EV_SGTC_PSG1, "events/psg1.sc" ) \
+	X( EV_SGTC_Reetou, "events/reetou.sc" ) \
+	X( EV_SGTC_Reetou2, "events/reetou2.sc" ) \
+	X( EV_SGTC_Shield, "events/shield.sc" ) \
+	X( EV_SGTC_Spas, "events/spas.sc" ) \
+	X( EV_SGTC_Spas2, "events/spas2.sc" ) \
+	X( EV_SGTC_Tac, "events/tac.sc" ) \
+	X( EV_SGTC_Usas, "events/usas.sc" ) \
+	X( EV_SGTC_ZatA, "events/zata.sc" ) \
+	X( EV_SGTC_ZatArc, "events/zatarc.sc" ) \
+	X( EV_SGTC_ZatB, "events/zatb.sc" ) \
+	X( EV_SGTC_Zat, "events/zat.sc" )
+
 extern "C"
 {
+void EV_SGTC_Batsup( struct event_args_s *args )
+{
+	int idx = args->entindex;
+	float origin[3], angles[3], forward[3], right[3], up[3], gunpos[3];
+
+	VectorCopy( args->origin, origin );
+	VectorCopy( args->angles, angles );
+	AngleVectors( angles, forward, right, up );
+	EV_GetGunPosition( args, gunpos, angles );
+
+	gEngfuncs.pEventAPI->EV_PlaySound( idx, origin, CHAN_WEAPON,
+		"weapons/swing1.wav", 0.7f, 0.8f, 0, 100 );
+
+	if( EV_IsLocal( idx ) )
+		gEngfuncs.pEventAPI->EV_WeaponAnimation( 4, 1 );
+}
+
+void EV_SGTC_Batsup2( struct event_args_s *args )
+{
+	if( EV_IsLocal( args->entindex ) )
+		gEngfuncs.pEventAPI->EV_WeaponAnimation( 5, 1 );
+}
+
 #define X( fn, script ) \
 	void fn( struct event_args_s *args ) \
 	{ \
 		SGTC_EventFallback( args, 1 ); \
 		(void)sizeof( script ); \
 	}
-SGTC_EV_LIST
+SGTC_EV_LIST_FALLBACK
 #undef X
 }
 
