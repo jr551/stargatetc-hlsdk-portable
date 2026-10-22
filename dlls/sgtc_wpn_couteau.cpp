@@ -13,9 +13,21 @@
 // ===========================================================================
 // CCouteau - "Couteau" throwing knife. Analogue: crowbar.cpp + thrown item.
 // Event: events/couteau.sc. Secondary throws the knife (ThrowIt).
+// Ref: CCouteau::Swing @0xd70ec, Throwit @0xd65b2, Smack @0xd6ee4 (empty).
 // ===========================================================================
 
 LINK_ENTITY_TO_CLASS( weapon_couteau, CCouteau );
+
+static void sgtcHullIntersect( const Vector &vecSrc, TraceResult &tr,
+	const float *mins, const float *maxs, edict_t *pEntity )
+{
+	TraceResult tmpTrace;
+	Vector vecHullEnd = tr.vecEndPos;
+	Vector vecEnd = vecSrc + ( vecHullEnd - vecSrc ) * 2.0f;
+	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, pEntity, &tmpTrace );
+	if( tmpTrace.flFraction < 1.0f )
+		tr = tmpTrace;
+}
 
 void CCouteau::Spawn( void )
 {
@@ -52,8 +64,18 @@ BOOL CCouteau::Deploy( void )
 	return SGTC_DEPLOY( 2, "models/v_couteau.mdl", "models/p_couteau.mdl", SGTC_DRAW, "crowbar" );
 }
 
+void CCouteau::Smack( void )
+{
+	// ref @0xd6ee4 — immediate return (no DecalGunshot).
+}
+
 void CCouteau::PrimaryAttack( void )
 {
+	if( m_pPlayer->pev->waterlevel == 3 )
+		return;
+	if( m_pPlayer->IsObserver() )
+		return;
+
 	if( !Swing( 1 ) )
 	{
 #ifndef CLIENT_DLL
@@ -78,6 +100,21 @@ int CCouteau::Swing( int fFirst )
 	Vector vecEnd = vecSrc + gpGlobals->v_forward * 32;
 
 	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( m_pPlayer->pev ), &tr );
+
+#ifndef CLIENT_DLL
+	if( tr.flFraction >= 1.0 )
+	{
+		UTIL_TraceHull( vecSrc, vecEnd, dont_ignore_monsters, head_hull, ENT( m_pPlayer->pev ), &tr );
+		if( tr.flFraction < 1.0 )
+		{
+			CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
+			if( !pHit || pHit->IsBSPModel() )
+				sgtcHullIntersect( vecSrc, tr, (float *)VEC_DUCK_HULL_MIN,
+					(float *)VEC_DUCK_HULL_MAX, m_pPlayer->edict() );
+			vecEnd = tr.vecEndPos;
+		}
+	}
+#endif
 
 	if( fFirst )
 	{
@@ -104,11 +141,31 @@ int CCouteau::Swing( int fFirst )
 		if( pEntity )
 		{
 			ClearMultiDamage();
-			pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar,
-				gpGlobals->v_forward, &tr, DMG_CLUB );
+			if( ( m_flNextPrimaryAttack + 1.0f < UTIL_WeaponTimeBase() ) || g_pGameRules->IsMultiplayer() )
+				pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar, gpGlobals->v_forward, &tr, DMG_CLUB );
+			else
+				pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar * 0.5f, gpGlobals->v_forward, &tr, DMG_CLUB );
 			ApplyMultiDamage( m_pPlayer->pev, m_pPlayer->pev );
-			EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody3.wav", 1, ATTN_NORM );
+
+			if( pEntity->Classify() != CLASS_NONE && pEntity->Classify() != CLASS_MACHINE )
+			{
+				switch( RANDOM_LONG( 0, 2 ) )
+				{
+				case 0:
+					EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody1.wav", 1, ATTN_NORM );
+					break;
+				case 1:
+					EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody2.wav", 1, ATTN_NORM );
+					break;
+				default:
+					EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/hitbody3.wav", 1, ATTN_NORM );
+					break;
+				}
+			}
 		}
+
+		m_trHit = tr;
+		Smack();
 #endif
 
 		if( fFirst )
@@ -123,6 +180,12 @@ int CCouteau::Swing( int fFirst )
 
 void CCouteau::SecondaryAttack( void )
 {
+	if( m_pPlayer->pev->waterlevel == 3 )
+		return;
+	if( m_pPlayer->IsObserver() )
+		return;
+	if( m_flNextPrimaryAttack > UTIL_WeaponTimeBase() )
+		return;
 	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
 		return;
 
@@ -135,13 +198,23 @@ void CCouteau::SecondaryAttack( void )
 void CCouteau::ThrowIt( void )
 {
 #ifndef CLIENT_DLL
+	m_pPlayer->SnagInvis();
+
 	UTIL_MakeVectors( m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle );
 
-	Vector vecSrc = m_pPlayer->GetGunPosition() + gpGlobals->v_forward * 16;
-	Vector vecThrow = gpGlobals->v_forward * 1200 + m_pPlayer->pev->velocity;
+	Vector vecSrc = m_pPlayer->GetGunPosition();
+	Vector vecEnd = vecSrc + gpGlobals->v_forward * 2048;
+	TraceResult tr;
+	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( m_pPlayer->pev ), &tr );
 
-	CSGTCBolt::CreateBolt( vecSrc, m_pPlayer->pev->v_angle, m_pPlayer,
+	Vector vecSpawn = vecSrc + gpGlobals->v_forward * 16;
+	if( tr.flFraction < 1.0f )
+		vecSpawn = tr.vecEndPos;
+
+	CSGTCBolt *pBolt = CSGTCBolt::CreateBolt( vecSpawn, m_pPlayer->pev->v_angle, m_pPlayer,
 		20.0f, "models/w_couteau.mdl" );
+	if( pBolt )
+		pBolt->pev->velocity = gpGlobals->v_forward * 1200 + m_pPlayer->pev->velocity;
 #endif
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 }
