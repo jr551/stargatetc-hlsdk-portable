@@ -830,7 +830,7 @@ static void SGTC_SpectateClient( CBasePlayer *pPlayer )
 	pPlayer->pev->view_ofs = Vector( 0.0f, 0.0f, 28.0f );
 	pPlayer->m_bNukeViewSnap = 0;				// ref +0x463
 	pPlayer->pev->effects &= ~EF_DIMLIGHT;	// ref pev+0x118 & 0xfffffff7
-	pPlayer->m_iSgtcTeamLatch = 0;						// ref +0x3e0-ish latch [INFERENCE]
+	pPlayer->m_bShieldWall = 0;				// ref @0xca48e movb $0,0x3e0(player)
 	pPlayer->m_bShieldSprint = 0;				// ref +0x4e9
 	pPlayer->m_bShieldSpawned = 0;			// ref +0x4e4
 	pPlayer->m_flSgtcLatch400 = 0;			// ref +0x3f8..3fc [INFERENCE]

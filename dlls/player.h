@@ -284,7 +284,6 @@ public:
 	int	m_iSgtcInfoLock;	// ref +0xdc — class-limits/info lock gate (ClientUserInfoChanged)
 	int	m_iSgtcClientIdx;	// ref +0x3e8 — "client" cmd arg: radio peer index
 	int	m_iSgtcCustomColor;	// ref +0x450 — "customcolor" cmd arg
-	int	m_iSgtcTeamLatch;	// [INFERENCE] ref +0x3e0-ish — cleared by "spectate"
 	char	m_bSgtcPad464;		// ref +0x464
 	char	m_bSgtcMenuLock;	// ref +0x4e5 — gond4h9wp menu lock
 	char	m_bSgtcPortraitsFrozen;	// ref +0x4e6 — portraits frozen latch
