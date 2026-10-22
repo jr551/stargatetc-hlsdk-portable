@@ -110,6 +110,7 @@ public:
 	int m_iKeyMode;			// ref +0x34
 	float m_flKeyTime;		// ref +0x30
 	int m_iRoundTimerOn;		// ref +0x16f0 (round timer armed; Draw gate @0x10075dd2)
+	int m_iRoundTimerMode;		// ref +0x70 — SetRndTim BYTE (0 off, 1 live, 2 spectator)
 	float m_flRoundTime;		// ref +0x16ec
 	float m_flRoundStart;		// ref +0x16e8
 	int m_iTicketModeFlag;		// ref +0x58 (TicketMode msg)

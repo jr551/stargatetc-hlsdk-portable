@@ -189,21 +189,11 @@ static void SGTC_BlitHudDigit( int x, int y, int digit, int r, int g, int b )
 static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 {
 	const float rem = hud->m_flRoundStart + hud->m_flRoundTime - gHUD.m_flTime;
-	const int w = SGTC_DigitWidth();
-	if( w <= 0 )
-		return;
 	if( !hud->m_iRoundTimerOn || hud->m_iTicketModeFlag )
 		return;
 
-	// P43b (2026-10-21): shipped CHudSgtc::Draw @0x100718df takes the HideWeapon
-	// fast path (ds:0x100e53f4 >= 2, the m_iHideHUDDisplay byte) for OBSERVERS —
-	// skips the slab and draws the timer at the ALT anchor (x0=ScreenWidth/2,
-	// y0=ScreenHeight/10) with layout flag 1 instead of the bottom-left arm.
-	// The byte itself is 9 for live players on this port's server too, so gating
-	// on >=2 alone would wrongly relocate the live-FP timer — ref-orig resolves
-	// that via a live-player HideWeapon byte <2 which we don't emit. Gate on the
-	// observer state (g_iUser1 != 0) as well so live play keeps bottom-left.
-	const bool altArm = ( gHUD.m_iHideHUDDisplay >= 2 ) && ( g_iUser1 != 0 );
+	// P43g: alt arm tracks the SetRndTim mode byte (ref +0x70), not g_iUser1.
+	const bool altArm = ( hud->m_iRoundTimerMode == 2 );
 
 	SPR_DisableScissor();
 	const int x0 = altArm ? ScreenWidth / 2 : 0x23;
@@ -213,7 +203,49 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 	const int mins = ( rem < 0.0f ) ? 0 : (int)( rem / 60.0f );
 	const int secs = ( rem < 0.0f ) ? 0 : (int)rem % 0x3c;
 
-	// Minutes — ref FUN_10057b66 flags 3 @0x10075ee5
+	if( altArm )
+	{
+		// P43j: orig :79 top-centre clock sits ~y=5 (cr3_top), not H/10 (~76). Xash additive
+		// digits read white on FB — use SGTC_BlitHudDigit (same as live-FP timer @0x10073256).
+		const int yAlt = 5 + gHUD.m_iHudNumbersYOffset;
+		int wAlt = SGTC_DigitWidth();
+		if( wAlt <= 0 )
+			wAlt = 16;
+		int x = ( x0 + 0x12 ) - ( wAlt * 9 ) / 4;
+		if( mins >= 10 )
+		{
+			SGTC_BlitHudDigit( x, yAlt, mins / 10, r, g, b );
+			x += wAlt;
+		}
+		else
+			x += wAlt;
+		SGTC_BlitHudDigit( x, yAlt, mins % 10, r, g, b );
+		const int dotIdx = gHUD.GetSpriteIndex( "2points" );
+		if( dotIdx > 0 )
+		{
+			SPR_Set( gHUD.GetSprite( dotIdx ), r, g, b );
+			SPR_DrawAdditive( 0, x0 - wAlt / 8, yAlt, &gHUD.GetSpriteRect( dotIdx ) );
+		}
+		x = x0 + ( wAlt * 3 ) / 8;
+		if( secs >= 10 )
+		{
+			SGTC_BlitHudDigit( x, yAlt, secs / 10, r, g, b );
+			x += wAlt;
+		}
+		else
+		{
+			SGTC_BlitHudDigit( x, yAlt, 0, r, g, b );
+			x += wAlt;
+		}
+		SGTC_BlitHudDigit( x, yAlt, secs % 10, r, g, b );
+		return;
+	}
+
+	const int w = SGTC_DigitWidth();
+	if( w <= 0 )
+		return;
+
+	// Minutes — ref FUN_10057b66 flags 3 @0x10075ee5 (live-FP bottom-left)
 	int x = ( x0 + 0x12 ) - ( w * 9 ) / 4;
 	if( mins >= 10 )
 	{
@@ -224,7 +256,6 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 		x += w; // DHN_2DIGITS column skip
 	SGTC_BlitHudDigit( x, y0, mins % 10, r, g, b );
 
-	// Separator — ref @0x10075f28-0x10075f97 (additive)
 	const int dotIdx = gHUD.GetSpriteIndex( "2points" );
 	if( dotIdx > 0 )
 	{
@@ -232,7 +263,6 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 		SPR_DrawAdditive( 0, x0 - w / 8, y0, &gHUD.GetSpriteRect( dotIdx ) );
 	}
 
-	// Seconds — ref flags 0xb @0x10075fa0 (DHN_ZEROPAD tens)
 	x = x0 + ( w * 3 ) / 8;
 	if( secs >= 10 )
 	{
@@ -241,7 +271,7 @@ static void SGTC_DrawRoundTimer( CHudSgtc *hud, float flTime )
 	}
 	else
 	{
-		SGTC_BlitHudDigit( x, y0, 0, r, g, b ); // flag 0x8 zero pad
+		SGTC_BlitHudDigit( x, y0, 0, r, g, b );
 		x += w;
 	}
 	SGTC_BlitHudDigit( x, y0, secs % 10, r, g, b );
@@ -861,11 +891,22 @@ static void SGTC_DrawAnnounceScroller( CHudSgtc *hud, float flTime )
 	FillRGBA( baseX + 1, baseY - 4 + frameH, maxW + 6, 2, 0x32, 0x32, 0xff, frameA );
 }
 
+static void SGTC_TimerDump_f( void )
+{
+	const float rem = g_SgtcHud.m_flRoundStart + g_SgtcHud.m_flRoundTime - gHUD.m_flTime;
+	gEngfuncs.Con_Printf(
+		"[sgtc] timer_dump on=%d mode=%d ticket=%d t=%.0f rem=%.0f digitW=%d hideHUD=%d hud_draw=%g\n",
+		g_SgtcHud.m_iRoundTimerOn, g_SgtcHud.m_iRoundTimerMode, g_SgtcHud.m_iTicketModeFlag,
+		g_SgtcHud.m_flRoundTime, rem, SGTC_DigitWidth(), gHUD.m_iHideHUDDisplay,
+		gHUD.m_pCvarDraw ? gHUD.m_pCvarDraw->value : -1.0f );
+}
+
 int CHudSgtc::Init( void )
 {
 	m_iFlags = HUDELEM_ACTIVE;
 	Reset();
 	gHUD.AddHudElem( this );
+	gEngfuncs.pfnAddCommand( "sgtc_timer_dump", SGTC_TimerDump_f );
 	// ref FUN_10072e5f — SGTC view toggles (default 0).
 	gEngfuncs.pfnRegisterVariable( "view_lowvis", "0", FCVAR_ARCHIVE );
 	gEngfuncs.pfnRegisterVariable( "view_radar", "0", FCVAR_ARCHIVE );
@@ -1566,8 +1607,8 @@ static void SGTC_DrawPortraitCell( CHudSgtc *hud, int slot, int px, int py, floa
 
 void CHudSgtc::DrawRoundTimer( float flTime )
 {
-	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
-		return;
+	// ref @0x10075DD2 — post-list repaint; mode 2 must paint here when
+	// HUD_Redraw skips CHudSgtc::Draw (HIDEHUD_ALL). Slab skip stays in Draw().
 	SGTC_DrawRoundTimer( this, flTime );
 }
 
@@ -1579,6 +1620,14 @@ int CHudSgtc::Draw( float flTime )
 
 	// ref @0x100738a6 — tac FSM runs before DAT_100e9d0c body skip @0x10073ac1.
 	SGTC_RunArmorTacSlideFsm( this, flTime );
+
+	// ref HideWeapon fast path @0x10071967 → 0x10073256 — spectator SetRndTim mode 2
+	// skips slab/radar/portraits; timer paints post-list (DrawRoundTimer).
+	if( m_iRoundTimerMode == 2 )
+	{
+		SGTC_DrawRoundTimer( this, flTime );
+		return 0;
+	}
 
 	if( m_iHideHud || ( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL ) )
 		return 0;
@@ -2311,8 +2360,9 @@ int CHudSgtc::MsgFunc_SetRndTim( const char *pszName, int iSize, void *pbuf )
 	// and the shipped orig draws the observer clock top-centre (graphics_comparison
 	// P43, orig ctp_crypt '9:15'). Draw gate +0x70 != 0 treats any nonzero state as
 	// armed; port previously disarmed on state 2 -> observer clock never drawn.
+	m_iRoundTimerMode = state;
 	m_iRoundTimerOn = ( state != 0 ) ? 1 : 0;
-	if( state == 1 && m_flRoundTime > 0.0f )
+	if( ( state == 1 || state == 2 ) && m_flRoundTime > 0.0f )
 		m_iTicketModeFlag = 0; // ref draw gate +0x58==0 (@0x10075de7) on non-ticket arm
 	return 1;
 }

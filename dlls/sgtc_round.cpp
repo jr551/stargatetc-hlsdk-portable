@@ -1778,8 +1778,12 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 	for( int i = 1; i <= gpGlobals->maxClients; i++ )
 	{
 		CBasePlayer *pPlayer = (CBasePlayer *)UTIL_PlayerByIndex( i );
-		if( pPlayer && !IsValidTeam( pPlayer->TeamID() ) &&
-			pPlayer->m_iSgtcTeam == 0 )
+		// ref restart loop reaches observers — the `else IsObserver()` arm below
+		// sends SetHudRoundTime(round,2) for the spectator HUD clock (P43c: the
+		// old `m_iSgtcTeam==0` clause nulled connect-observers, so the mode-2
+		// send never fired and the observer top-center clock stayed dark).
+		if( pPlayer && !pPlayer->IsObserver() &&
+			!IsValidTeam( pPlayer->TeamID() ) && pPlayer->m_iSgtcTeam == 0 )
 			pPlayer = NULL;
 
 		if( !pPlayer )
@@ -1836,7 +1840,11 @@ void CStargateTeamDM::SGTC_NewRoundCommon( BOOL bCaptureMode )
 				pPlayer->m_iSgtcGondArgs[t] = 0; // ref +0x9ac[29] = 0 — gond args, not m_iProgressTeam
 			}
 		}
-		respawn( pPlayer->pev, 0 );
+		// P43c: observers entering the loop must NOT respawn — respawn() would
+		// relocate the free-cam (P35 regression, grey frame); ref's mode-2 send
+		// happens for the observer without disturbing the spectator camera.
+		if( !pPlayer->IsObserver() )
+			respawn( pPlayer->pev, 0 );
 
 		if( sgtc_tourny != 0.0f )
 		{
