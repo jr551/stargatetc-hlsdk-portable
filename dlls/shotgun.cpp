@@ -46,7 +46,7 @@ void CShotgun::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_SHOTGUN;
-	SET_MODEL( ENT( pev ), "models/w_shotgun.mdl" );
+	SET_MODEL( ENT( pev ), "models/w_spas.mdl" );
 
 	m_iDefaultAmmo = SHOTGUN_DEFAULT_GIVE;
 
@@ -55,9 +55,9 @@ void CShotgun::Spawn()
 
 void CShotgun::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_shotgun.mdl" );
-	PRECACHE_MODEL( "models/w_shotgun.mdl" );
-	PRECACHE_MODEL( "models/p_shotgun.mdl" );
+	PRECACHE_MODEL( "models/v_spas.mdl" );
+	PRECACHE_MODEL( "models/w_spas.mdl" );
+	PRECACHE_MODEL( "models/p_spas.mdl" );
 
 	m_iShell = PRECACHE_MODEL( "models/shotgunshell.mdl" );// shotgun shell
 
@@ -75,8 +75,8 @@ void CShotgun::Precache( void )
 	PRECACHE_SOUND( "weapons/357_cock1.wav" ); // gun empty sound
 	PRECACHE_SOUND( "weapons/scock1.wav" );	// cock gun
 
-	m_usSingleFire = PRECACHE_EVENT( 1, "events/shotgun1.sc" );
-	m_usDoubleFire = PRECACHE_EVENT( 1, "events/shotgun2.sc" );
+	m_usSingleFire = PRECACHE_EVENT( 1, "events/spas2.sc" );
+	m_usDoubleFire = PRECACHE_EVENT( 1, "events/spas2.sc" );
 }
 
 int CShotgun::AddToPlayer( CBasePlayer *pPlayer )
@@ -110,7 +110,7 @@ int CShotgun::GetItemInfo( ItemInfo *p )
 
 BOOL CShotgun::Deploy()
 {
-	return DefaultDeploy( "models/v_shotgun.mdl", "models/p_shotgun.mdl", SHOTGUN_DRAW, "shotgun" );
+	return DefaultDeploy( "models/v_spas.mdl", "models/p_spas.mdl", SHOTGUN_DRAW, "shotgun" );
 }
 
 void CShotgun::PrimaryAttack()
