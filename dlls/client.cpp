@@ -847,6 +847,26 @@ void ClientPrecache( void )
 
 	PRECACHE_MODEL( "models/player.mdl" );
 
+	// class player models: ref ClientPrecache() pushes these full paths
+	// (stc_i386.so @0xc5f52..0xc604f; hl.dll @0x10120068..0x101201ac).
+	// The engine resolves the visible model from the client "model" key as
+	// models/player/<name>/<name>.mdl, so precaching the same paths keeps the
+	// per-class model resident before the first third-person sighting.
+	PRECACHE_MODEL( "models/player/oneill/oneill.mdl" );
+	PRECACHE_MODEL( "models/player/carter/carter.mdl" );
+	PRECACHE_MODEL( "models/player/jackson/jackson.mdl" );
+	PRECACHE_MODEL( "models/player/tealc/tealc.mdl" );
+	PRECACHE_MODEL( "models/player/commander/commander.mdl" );
+	PRECACHE_MODEL( "models/player/systemlord/systemlord.mdl" );
+	PRECACHE_MODEL( "models/player/anubis/anubis.mdl" );
+	PRECACHE_MODEL( "models/player/goauld3/goauld3.mdl" );
+	PRECACHE_MODEL( "models/player/snakegoauld/snakegoauld.mdl" );
+	PRECACHE_MODEL( "models/player/horus/horus.mdl" );
+	PRECACHE_MODEL( "models/player/superman/superman.mdl" );
+	// NOTE: ref also precaches "models/player/unas/unas.mdl" (stc_i386.so
+	// @0xc604f). That file is absent from the assets repo, so it is not
+	// requested here until the asset is restored.
+
 	// hud sounds
 	PRECACHE_SOUND( "common/wpn_hudoff.wav" );
 	PRECACHE_SOUND( "common/wpn_hudon.wav" );

@@ -16,6 +16,7 @@
 extern Vector sgtc_LastKeyPlace;
 extern char sgtc_KeyInPlay;
 extern void *sgtc_superguns;
+extern cvar_t sgtc_cvar_freeguns;	// sgtc_round.cpp (ref freeguns @0x2238f8)
 
 // Globals from other TUs (lazy externs, as elsewhere in this file).
 extern int gmsgSayText;
@@ -2082,7 +2083,11 @@ void SGTC_GiveFromMenu( CBasePlayer *pPlayer )
 
 	for( int i = 0; i < 28; i++ )
 	{
-		if( pPlayer->m_iSgtcGondArgs[i] == 0 )	// ref gates on nonzero, not ==1
+		// ref 0x17af0e..0x17af34: grant only when the menu value is exactly 1,
+		// or freeguns > 1 (menu-12 sends 2 for team/class-blocked slots, which
+		// the ref must not grant).
+		if( pPlayer->m_iSgtcGondArgs[i] != 1 &&
+			sgtc_cvar_freeguns.value <= 1.0f )
 			continue;
 
 		pPlayer->m_bSgtcMenuLockLatch = 1;	// ref +0x4e7

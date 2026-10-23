@@ -821,12 +821,15 @@ CSgtcTeamClassPanel::CSgtcTeamClassPanel( int iTrans, int iRemoveMe, int x, int 
 		m_pClassButton[iClass]->addInputSignal( new CSgtcHandler_ClassOver( this, iClass ) );
 
 		// Per-class info/blurb; parented to the panel (not the clipped window)
-		// and placed in the center gap between the columns. Only one shows at
-		// a time (SetActiveInfo). BORN VISIBLE — a born-invisible freevgui
+		// and placed in the right-hand column, where the orig draws it
+		// (measured A/B: borders at 654..989 x 168..553 on 1024x768 →
+		// XRES(409), YRES(105), XRES(209), YRES(240)). The old centre-gap
+		// placement sat on top of the class portrait. Only one shows at a
+		// time (SetActiveInfo). BORN VISIBLE — a born-invisible freevgui
 		// child is never solved, so the hide is deferred to the first
 		// paintTraverse (m_bFirstPaint), after the child's first solve.
-		m_pClassInfo[iClass] = new TextPanel( "", XRES( 215 ), YRES( 120 ),
-			XRES( 210 ), YRES( 120 ) );
+		m_pClassInfo[iClass] = new TextPanel( "", XRES( 409 ), YRES( 105 ),
+			XRES( 209 ), YRES( 240 ) );
 		m_pClassInfo[iClass]->setParent( this );
 		m_pClassInfo[iClass]->setFont( pSchemes->getFont( hBriefingText ) );
 		pSchemes->getFgColor( hBriefingText, r, g, b, a );
@@ -1780,6 +1783,14 @@ public:
 
 	virtual void Reset( void );
 	virtual void SetActiveInfo( int iInput );
+	virtual void paintTraverse( bool repaint );
+
+	// ref Update (0x100295be..0x1002a209): the panel only carries the pack
+	// buttons its class actually has — the orig shows exactly two
+	// ("#PACK 1"/"#PACK 2") for an anubis player, the other two are absent,
+	// not greyed out. Re-evaluated every paint because the ScoreInfo cache
+	// may arrive after the ctor.
+	void RefreshPackAvailability( void );
 
 	void SelectPack( int iPack );
 	// ref vtable +0x214/+0x218 (FUN_1002b046 + FUN_1002b15b): fill the 28
@@ -1933,30 +1944,46 @@ void CSgtcPackSelPanel::Reset( void )
 	{
 		m_pPackButton[i]->setArmed( false );
 		m_pPackButton[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
-		// ref Update (0x100295be..0x10029a41 + 2-pack branch @0x1002a209):
-		// pack buttons beyond the class's pack count are not armed. The
-		// count is per team/class — count the non-empty preset rows for
-		// the local player; unknown team/class keeps all four enabled.
-		int iPacks = SGTC_PACKSEL_COUNT;
-		cl_entity_t *pLocal = gEngfuncs.GetLocalPlayer();
-		if ( pLocal && pLocal->index > 0 && pLocal->index <= MAX_PLAYERS )
+	}
+	RefreshPackAvailability();
+	m_pInfo->setText( "" );
+}
+
+// ref Update: the pack list is per team/class — count the non-empty preset
+// rows and hide the buttons past that count (the orig draws only the two
+// anubis packs). Unknown team/class (ScoreInfo not yet received) keeps all
+// four, matching the ref's uninitialised-cache path.
+void CSgtcPackSelPanel::RefreshPackAvailability( void )
+{
+	int iPacks = SGTC_PACKSEL_COUNT;
+	cl_entity_t *pLocal = gEngfuncs.GetLocalPlayer();
+	if ( pLocal && pLocal->index > 0 && pLocal->index <= MAX_PLAYERS )
+	{
+		int iTeam = g_PlayerExtraInfo[pLocal->index].teamnumber;
+		int iClass = g_PlayerExtraInfo[pLocal->index].playerclass - 1;
+		if ( iTeam >= 1 && iTeam <= 2 && iClass >= 0 && iClass <= 4 )
 		{
-			int iTeam = g_PlayerExtraInfo[pLocal->index].teamnumber;
-			int iClass = g_PlayerExtraInfo[pLocal->index].playerclass - 1;
-			if ( iTeam >= 1 && iTeam <= 2 && iClass >= 0 && iClass <= 4 )
+			iPacks = 0;
+			for ( int p = 0; p < SGTC_PACKSEL_COUNT; p++ )
 			{
-				iPacks = 0;
-				for ( int p = 0; p < SGTC_PACKSEL_COUNT; p++ )
-				{
-					int iTmp[SGTC_PACK_MAX_SLOTS];
-					if ( SgtcPack_GetSlots( iTeam, iClass, p + 1, iTmp ) > 0 )
-						iPacks++;
-				}
+				int iTmp[SGTC_PACK_MAX_SLOTS];
+				if ( SgtcPack_GetSlots( iTeam, iClass, p + 1, iTmp ) > 0 )
+					iPacks++;
 			}
 		}
-		m_pPackButton[i]->setEnabled( i < iPacks );	// ref: enabled while i < +0x93
 	}
-	m_pInfo->setText( "" );
+
+	for ( int i = 0; i < SGTC_PACKSEL_COUNT; i++ )
+	{
+		m_pPackButton[i]->setVisible( i < iPacks );	// ref: absent, not disabled
+		m_pPackButton[i]->setEnabled( i < iPacks );
+	}
+}
+
+void CSgtcPackSelPanel::paintTraverse( bool repaint )
+{
+	RefreshPackAvailability();
+	CMenuPanel::paintTraverse( repaint );
 }
 
 // ref FUN_1002b046 (+0x214): read the local player's team/class from the
