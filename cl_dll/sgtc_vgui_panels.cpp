@@ -1180,8 +1180,11 @@ public:
 	virtual void SetActiveInfo( int iInput );	// hovered slot (0..27)
 
 	// ref FUN_10029888 + DAT_100ddad8 gate: restore the selection from the
-	// server's 28 per-slot state bytes (Progress message).
-	void ApplyServerState( void );
+	// server's 28 per-slot state bytes (Progress message). bReset is the ref's
+	// `if (0 < DAT_100ddad8) Reset()` prologue — the plain Update path
+	// (flag 0, e.g. a cost/TeamNames refresh) must not wipe the player's
+	// in-progress clicks.
+	void ApplyServerState( bool bReset = true );
 
 	void ToggleSlot( int iSlot );			// click: select / deselect
 	int SelectedSlotCount( void );
@@ -1486,9 +1489,10 @@ void CSgtcWeaponSelPanel::Reset( void )
 // The ref adds (&DAT_100dd9ac)[i] for secondary slots, which for i >= 0xe
 // aliases the *state* array (0x100dd9e4) — the shipped binary therefore adds
 // the state value (2) for every preselected secondary; replicated verbatim.
-void CSgtcWeaponSelPanel::ApplyServerState( void )
+void CSgtcWeaponSelPanel::ApplyServerState( bool bReset )
 {
-	Reset();
+	if ( bReset )
+		Reset();
 
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
 	{
@@ -1674,8 +1678,12 @@ void CSgtcWeaponSelPanel::SetActiveInfo( int iInput )
 
 void CSgtcHandler_WepSelReset::actionPerformed( Panel *panel )
 {
+	// Ref: the Reset button reaches the panel's Reset vtable (+0x1fc =
+	// FUN_10029888), the same body that re-applies the server's per-slot
+	// state. Calling the partial Reset() instead left team/class-gated rows
+	// visible after a Reset (the orig keeps them hidden).
 	if ( m_pPanel )
-		m_pPanel->Reset();
+		m_pPanel->ApplyServerState();
 }
 
 void CSgtcHandler_SlotClick::actionPerformed( Panel *panel )
@@ -1694,7 +1702,8 @@ void CSgtcHandler_SlotOver::cursorEntered( Panel *panel )
 // pfnClientCmd (FUN_10028323 @0x10029131..0x100291a7: the raw DAT_100dda5c
 // flag value 0/1/2 is pushed for every slot — not a normalised 0/1). Our
 // server's gond4h9wp handler reads CMD_ARGV(1..28) as m_iSgtcGondArgs[] and
-// grants on any nonzero value (dlls/sgtc_player.cpp:1151 / :2009).
+// grants only slots whose arg is 1 (or every slot when mp_freeguns > 1) —
+// dlls/sgtc_player.cpp SGTC_GiveFromMenu.
 void CSgtcHandler_WepSelApply::actionPerformed( Panel *panel )
 {
 	if ( !m_pPanel || !gViewPort )
@@ -2197,8 +2206,10 @@ static void SgtcWepSel_ApplyServerState( void )
 	}
 	else
 	{
-		// Costs/budget changed under a live panel: refresh the counters only.
-		s_pWeaponSelPanel->ApplyServerState();
+		// Costs/budget/state changed under a live panel with the reset flag
+		// clear: ref Update runs the state/hide/cost pass only — a full
+		// Reset() here would discard the player's in-progress clicks.
+		s_pWeaponSelPanel->ApplyServerState( false );
 	}
 }
 
