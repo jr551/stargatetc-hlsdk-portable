@@ -50,8 +50,18 @@ BOOL CPsg1::Deploy( void )
 
 SGTC_GUN_PRIMARY( CPsg1, m_usFire, SGTC_BULLET_PSG1, VECTOR_CONE_1DEGREES, 1, 8192, 40, 0, 1.0 )
 SGTC_NO_SECONDARY( CPsg1 )
-SGTC_WEAPON_RELOAD( CPsg1, 10 )
+// ref Reload @0x15ac06 passes iAnim=3 (v_psg1.mdl seq 3 = "reload").
+SGTC_WEAPON_RELOAD_ANIM( CPsg1, 10, 3 )
 SGTC_WEAPON_IDLE( CPsg1 )
+
+// ref Holster @0x15a62c: cancels the reload, delays the next attack 0.5 s and
+// plays v_psg1.mdl seq 4 ("holster"); it never clears the viewmodel.
+void CPsg1::Holster( int skiplocal )
+{
+	m_fInReload = FALSE;
+	m_pPlayer->m_flNextAttack = UTIL_WeaponTimeBase() + 0.5;
+	SendWeaponAnim( 4, 0, 0 );
+}
 
 // Reference maps weapon_spas to stock CShotgun (shotgun.cpp); stock
 // registration stands, so CSGTCSpas is removed.

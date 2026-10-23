@@ -106,6 +106,15 @@ static char *SgtcPanels_LoadFile( const char *pszFile )
 //   - the dismissal clears the next time ANY menu front is dismissed (orig:
 //     menu-10 Ok -> the next menu-11 resend re-popped 11).
 static int s_iSgtcDismissedMenu = 0;	// SGTC menu id last closed by the user
+static float s_flSgtcDismissedAt = 0.0f;	// gEngfuncs.GetClientTime() at that close
+
+// The user-close mark only suppresses the *immediate* server resend (the
+// dead-observer menu-11 resend runs at 1 Hz). The ref has no dismissal memory:
+// ShowVGUIMenu dedups against the live menu chain only (REA
+// .rea/spawn_vgui_rea.md), so a later explicit re-show — e.g. vguimenuyoyo 12
+// after Close, which the orig honours — must install. Without a window the mark
+// blocked every same-id re-show for the rest of the level.
+#define SGTC_DISMISS_GUARD_SEC 2.0f
 
 // ids the stock TeamFortressViewport owns (2..9). SGTC ids are 10/11/12/60.
 static bool SgtcPanels_IsStockMenuId( int iMenu )
@@ -118,7 +127,11 @@ static bool SgtcPanels_IsStockMenuId( int iMenu )
 static bool SgtcPanels_ShouldShow( int iMenu )
 {
 	if ( s_iSgtcDismissedMenu == iMenu )
-		return false;
+	{
+		if ( ( gEngfuncs.GetClientTime() - s_flSgtcDismissedAt ) < SGTC_DISMISS_GUARD_SEC )
+			return false;
+		s_iSgtcDismissedMenu = 0;	// guard expired: a later show is legitimate
+	}
 
 	for ( CMenuPanel *p = gViewPort->m_pCurrentMenu; p; p = p->GetNextMenu() )
 	{
@@ -215,6 +228,7 @@ public:
 		if ( gViewPort && gViewPort->m_pCurrentMenu )
 		{
 			s_iSgtcDismissedMenu = gViewPort->m_pCurrentMenu->GetMenuID();
+			s_flSgtcDismissedAt = gEngfuncs.GetClientTime();
 			gEngfuncs.Con_Printf( "[sgtc] DismissMenu id %d\n", s_iSgtcDismissedMenu );
 		}
 		if ( gViewPort )
@@ -240,6 +254,7 @@ public:
 		if ( gViewPort && gViewPort->m_pCurrentMenu )
 		{
 			s_iSgtcDismissedMenu = gViewPort->m_pCurrentMenu->GetMenuID();
+			s_flSgtcDismissedAt = gEngfuncs.GetClientTime();
 			gEngfuncs.Con_Printf( "[sgtc] JoinMark id %d\n", s_iSgtcDismissedMenu );
 		}
 	}
@@ -1674,8 +1689,13 @@ void CSgtcWeaponSelPanel::SetActiveInfo( int iInput )
 
 void CSgtcHandler_WepSelReset::actionPerformed( Panel *panel )
 {
+	// Ref Reset button runs the panel Reset vtable body (FUN_10029888), which
+	// clears the selection AND re-applies the server's per-slot allow bytes, so
+	// blocked rows stay hidden. The local Reset() helper only clears; calling it
+	// alone made every one of the 28 rows visible (orig keeps blocked slots
+	// hidden, A/B capture o_reset.png).
 	if ( m_pPanel )
-		m_pPanel->Reset();
+		m_pPanel->ApplyServerState();
 }
 
 void CSgtcHandler_SlotClick::actionPerformed( Panel *panel )
@@ -1993,7 +2013,11 @@ void CSgtcPackSelPanel::FillPackSlots( void )
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
 		m_iSlots[i] = 0;
 
-	if ( m_iSelectedPack < 1 || m_iSelectedPack > SGTC_PACKSEL_COUNT )
+	// m_iSelectedPack is the 0-based button index (CSgtcHandler_PackClick
+	// passes the ctor loop index); SgtcPack_GetSlots is 1-based like the ref's
+	// panel +0x248 pack value. Passing the 0-based value made PACK 1 return
+	// early (all-zero gond4h9wp, no grant) and PACK N >= 2 send pack N-1.
+	if ( m_iSelectedPack < 0 || m_iSelectedPack >= SGTC_PACKSEL_COUNT )
 		return;
 
 	int iTeam = 0;
@@ -2008,7 +2032,7 @@ void CSgtcPackSelPanel::FillPackSlots( void )
 	}
 
 	int iSlots[SGTC_PACK_MAX_SLOTS];
-	int iCount = SgtcPack_GetSlots( iTeam, iClass, m_iSelectedPack, iSlots );
+	int iCount = SgtcPack_GetSlots( iTeam, iClass, m_iSelectedPack + 1, iSlots );
 	for ( int i = 0; i < iCount; i++ )
 	{
 		if ( iSlots[i] >= 0 && iSlots[i] < SGTC_WPSEL_SLOTS )
