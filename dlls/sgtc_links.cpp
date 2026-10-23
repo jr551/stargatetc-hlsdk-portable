@@ -1,8 +1,8 @@
 // sgtc_links.cpp — StargateTC entity registrations for stock SDK classes the
 // reference build reuses. Verified by disasm (GetClassPtr thunk targets):
-//   weapon_c4  → CSatchel    (stock satchel.cpp)
-//   weapon_mine → CTripmine  (stock tripmine.cpp)
-//   weapon_spas → CShotgun    (stock shotgun.cpp)
+//   weapon_c4  → CSatchel    (satchel.cpp; SGTC v_/p_/w_c4 models)
+//   weapon_mine → CTripmine  (tripmine.cpp; SGTC v_/p_/w_mine models)
+//   weapon_spas → CShotgun    (shotgun.cpp; SGTC v_/p_/w_spas + events/spas2.sc)
 
 #include "extdll.h"
 #include "util.h"
