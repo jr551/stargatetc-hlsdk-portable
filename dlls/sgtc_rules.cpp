@@ -806,8 +806,8 @@ void SetWeaponAllow( CBasePlayer *pPlayer )
 		{ 0,2,7,9,12,13,14,17,18,19,21,22,27,-1 },
 		// cls 2 (16)
 		{ 0,1,2,5,7,8,9,11,13,14,16,17,18,19,20,21,-1 },
-		// cls 3 (20)
-		{ 0,1,2,7,8,9,11,12,13,14,15,17,18,19,20,21,23,24,25,27,-1 },
+		// cls 3 (20) — ref case 3 @SetWeaponAllow: 0x10 (mine), not 0x0f (hand grenade)
+		{ 0,1,2,7,8,9,11,12,13,14,16,17,18,19,20,21,23,24,25,27,-1 },
 		// cls 4 (13)
 		{ 2,5,6,9,13,14,17,18,19,21,24,26,27,-1 },
 		// cls 5 (18; ref case has no break — falls out of the switch)
@@ -2077,10 +2077,12 @@ static int SGTC_PortraitSprId( CBasePlayer *pPlayer )
 	int cls = pPlayer->m_iSgtcPortraitShown;
 	if( cls < 1 || cls > 5 )
 		cls = 1;
-	// avatar table: 1..5 Tau'ri, 6..10 Goa'uld (pev->team == 1).
-	if( (int)pPlayer->pev->team == 1 )
-		return cls + 5;
-	return cls;
+	// Avatar table (client FUN_10072923 / SGTC_PortraitAvatarSprite) is
+	// 0-based: 0..4 Tau'ri, 5..9 Goa'uld. Ref own-cell avatar for Prima
+	// (Goa'uld class 4) is index 8 = snakegoauld; the old cls+5 / cls form
+	// shifted every class by one (Prima drew horus, Torri 1 drew carter) and
+	// the trailing id byte was hardcoded 0 (everyone drew oneill).
+	return ( (int)pPlayer->pev->team == 1 ) ? cls + 4 : cls - 1;
 }
 
 static void SGTC_EmitAddPortrait( int msgDest, edict_t *to, CBasePlayer *subject )
@@ -2094,8 +2096,10 @@ static void SGTC_EmitAddPortrait( int msgDest, edict_t *to, CBasePlayer *subject
 	if( !name || !name[0] )
 		name = subject->m_szTeamName[0] ? subject->m_szTeamName : "player";
 
+	int sprId = SGTC_PortraitSprId( subject );	// ref own-cell + slot avatar id
+
 	MESSAGE_BEGIN( msgDest, gmsgAddPortrait, NULL, to );
-		WRITE_SHORT( SGTC_PortraitSprId( subject ) );
+		WRITE_SHORT( sprId );
 		WRITE_LONG( hp );
 		WRITE_SHORT( (int)subject->pev->team );
 		WRITE_SHORT( subject->m_iSgtcPortraitShown );
@@ -2104,7 +2108,7 @@ static void SGTC_EmitAddPortrait( int msgDest, edict_t *to, CBasePlayer *subject
 		WRITE_SHORT( 100 );
 		WRITE_SHORT( (int)subject->pev->armorvalue );
 		WRITE_STRING( name );
-		WRITE_BYTE( 0 );
+		WRITE_BYTE( sprId );
 	MESSAGE_END();
 }
 
@@ -2135,7 +2139,7 @@ void CStargateTeamDM::RedrawPortrait( CBasePlayer *pPlayer )
 		{
 			if( !strcmp( model, s_SGTCPortraits[i] ) )
 			{
-				sprId = i + 1;
+				sprId = i;	// client avatar table is 0-based (0 = oneill)
 				break;
 			}
 		}
@@ -2160,7 +2164,7 @@ void CStargateTeamDM::RedrawPortrait( CBasePlayer *pPlayer )
 		WRITE_SHORT( 100 );
 		WRITE_SHORT( (int)pPlayer->pev->armorvalue );
 		WRITE_STRING( name );
-		WRITE_BYTE( 0 );
+		WRITE_BYTE( sprId );
 	MESSAGE_END();
 }
 

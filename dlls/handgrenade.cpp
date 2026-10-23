@@ -55,6 +55,7 @@ void CHandGrenade::Precache( void )
 {
 	PRECACHE_MODEL( "models/w_grenade.mdl" );
 	PRECACHE_MODEL( "models/v_grenade.mdl" );
+	PRECACHE_MODEL( "models/v_grenadeT.mdl" );
 	PRECACHE_MODEL( "models/p_grenade.mdl" );
 }
 
@@ -78,7 +79,10 @@ int CHandGrenade::GetItemInfo( ItemInfo *p )
 BOOL CHandGrenade::Deploy()
 {
 	m_flReleaseThrow = -1;
-	return DefaultDeploy( "models/v_grenade.mdl", "models/p_grenade.mdl", HANDGRENADE_DRAW, "crowbar" );
+	// Torri (pev->team==2) uses the T-suffixed viewmodel like other SGTC weapons.
+	const char *pszView = ( m_pPlayer->pev->team == 2 )
+		? "models/v_grenadeT.mdl" : "models/v_grenade.mdl";
+	return DefaultDeploy( pszView, "models/p_grenade.mdl", HANDGRENADE_DRAW, "crowbar" );
 }
 
 BOOL CHandGrenade::CanHolster( void )
