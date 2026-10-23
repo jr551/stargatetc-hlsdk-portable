@@ -181,7 +181,6 @@ extern "C"
 	X( EV_SGTC_BeamStop, "events/beam_stop.sc" ) \
 	X( EV_SGTC_BigLance, "events/biglance.sc" ) \
 	X( EV_SGTC_Coujaf, "events/coujaf.sc" ) \
-	X( EV_SGTC_Couteau, "events/couteau.sc" ) \
 	X( EV_SGTC_Eagle, "events/eagle.sc" ) \
 	X( EV_SGTC_Invis, "events/invis.sc" ) \
 	X( EV_SGTC_Lance, "events/lance.sc" ) \
@@ -210,6 +209,7 @@ extern "C"
 #define X( fn, script ) void fn( struct event_args_s *args );
 SGTC_EV_LIST
 #undef X
+	void EV_SGTC_Couteau( struct event_args_s *args );
 }
 
 // Shared fallback: local-player muzzle flash + tracer + texture/decals,
@@ -244,10 +244,20 @@ SGTC_EV_LIST
 #undef X
 }
 
+// ref @0x100095df — couteau: local anim(1, R(0,1)) only (no muzzle flash / brass)
+void EV_SGTC_Couteau( struct event_args_s *args )
+{
+	int idx = args->entindex;
+
+	if( EV_IsLocal( idx ) )
+		gEngfuncs.pEventAPI->EV_WeaponAnimation( 1, gEngfuncs.pfnRandomLong( 0, 1 ) );
+}
+
 void SGTC_ClientProtocol_HookEvents( void )
 {
 #define X( fn, script ) gEngfuncs.pfnHookEvent( script, fn );
 SGTC_EV_LIST
+	gEngfuncs.pfnHookEvent( "events/couteau.sc", EV_SGTC_Couteau );
 #undef X
 }
 
