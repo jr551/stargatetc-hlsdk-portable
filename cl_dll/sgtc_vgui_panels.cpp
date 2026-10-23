@@ -1678,10 +1678,11 @@ void CSgtcWeaponSelPanel::SetActiveInfo( int iInput )
 
 void CSgtcHandler_WepSelReset::actionPerformed( Panel *panel )
 {
-	// Ref: the Reset button reaches the panel's Reset vtable (+0x1fc =
-	// FUN_10029888), the same body that re-applies the server's per-slot
-	// state. Calling the partial Reset() instead left team/class-gated rows
-	// visible after a Reset (the orig keeps them hidden).
+	// Ref Reset button runs the panel Reset vtable body (FUN_10029888), which
+	// clears the selection AND re-applies the server's per-slot allow bytes, so
+	// blocked rows stay hidden. The local Reset() helper only clears; calling it
+	// alone made every one of the 28 rows visible (orig keeps blocked slots
+	// hidden, A/B capture o_reset.png).
 	if ( m_pPanel )
 		m_pPanel->ApplyServerState();
 }
@@ -1885,15 +1886,17 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	// Background (ref +0x164: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border).
 	// ASM @0x1002a1ca: setBgColor(0,0,0x32,0x64) — dark navy translucent,
 	// same as menus 11/12 (0x100ddaf4 is the TextPanel ctor arg, not a colour).
-	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
-		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 42 ) );
+	// Ref ctor uses raw pixel constants (VGUI1 ints), not 640x480 design units:
+	// measured orig frame = x 21..1002, y 21..746 at 1024x768.
+	TextPanel *pBackground = new TextPanel( "", 21, 21,
+		ScreenWidth - 42, ScreenHeight - 42 );
 	pBackground->setParent( this );
 	pBackground->setBgColor( 0, 0, 0x32, 0x64 );
 	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// Title (ref +0x234, literal "Identifiez-vous"; fg hardcoded periwinkle
 	// 0x8c,0x8c,0xf0 @0x1002a02b — same as menus 11/12, not the scheme colour)
-	m_pTitle = new Label( "", XRES( 40 ), YRES( 16 ) );
+	m_pTitle = new Label( "", 40, 16 );
 	m_pTitle->setParent( this );
 	m_pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
 	m_pTitle->setFgColor( 0x8c, 0x8c, 0xf0, 0 );
@@ -1906,10 +1909,11 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 		char szKey[16];
 		snprintf( szKey, sizeof( szKey ), "#PACK %d", iPack + 1 );	// ref 0x100b403c.. (space, no underscore)
 
+		// Measured orig: x 42..301 (260 wide), rows at y 42 and 79 (pitch 37,
+		// height 29). The menu-12 row pitch/height use the same 0x25/0x1d pair.
 		m_pPackButton[iPack] = new CommandButton(
 			gHUD.m_TextMessage.BufferedLocaliseTextString( szKey ),
-			XRES( 40 ), YRES( 44 ) + iPack * ( BUTTON_SIZE_Y + YRES( 4 ) ),
-			XRES( 260 ), BUTTON_SIZE_Y );
+			42, 42 + iPack * 37, 260, 29 );
 		m_pPackButton[iPack]->setParent( this );
 		m_pPackButton[iPack]->addActionSignal( new CSgtcHandler_PackClick( this, iPack ) );
 		m_pPackButton[iPack]->addInputSignal( new CSgtcHandler_PackOver( this, iPack ) );
@@ -1918,8 +1922,10 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 
 	// Pack info panel (ref +0x174: x 0x143, y 0x2a, W-0x16d, H-0x93, fg 0x8c8c8c,
 	// bg black)
-	m_pInfo = new TextPanel( "", XRES( 323 ), YRES( 42 ),
-		ScreenWidth - XRES( 365 ), ScreenHeight - YRES( 147 ) );
+	// Ref ctor: x 0x143 (323), y 0x2a (42), W-0x16d, H-0x93 — raw pixels.
+	// Measured orig frame x 323..981, y 42..662 at 1024x768.
+	m_pInfo = new TextPanel( "", 323, 42,
+		ScreenWidth - 365, ScreenHeight - 147 );
 	m_pInfo->setParent( this );
 	m_pInfo->setFont( pSchemes->getFont( hBriefingText ) );
 	pSchemes->getFgColor( hBriefingText, r, g, b, a );
@@ -1928,13 +1934,14 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	m_pInfo->setBorder( new LineBorder( Color( 0, 0, 0xff, 0 ) ) );
 
 	// Bottom buttons (ref +0x114 #Annuler at W/2+0xad, +0x118 #Apply at W/2-0xad)
+	// Measured orig: Apply/Close 152x42 at y 684 (H-84), x = W/2 +/- 173.
 	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
-		ScreenWidth / 2 + XRES( 173 ), ScreenHeight - YRES( 84), XRES( 152 ), BUTTON_SIZE_Y );
+		ScreenWidth / 2 + 173, ScreenHeight - 84, 152, 42 );
 	m_pCancelButton->setParent( this );
 	m_pCancelButton->addActionSignal( new CSgtcHandler_DismissMenu() );
 
 	m_pApplyButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Apply" ),
-		ScreenWidth / 2 - XRES( 173 ), ScreenHeight - YRES( 84 ), XRES( 152 ), BUTTON_SIZE_Y );
+		ScreenWidth / 2 - 173, ScreenHeight - 84, 152, 42 );
 	m_pApplyButton->setParent( this );
 	m_pApplyButton->addActionSignal( new CSgtcHandler_PackApply( this ) );
 
@@ -2002,7 +2009,11 @@ void CSgtcPackSelPanel::FillPackSlots( void )
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
 		m_iSlots[i] = 0;
 
-	if ( m_iSelectedPack < 1 || m_iSelectedPack > SGTC_PACKSEL_COUNT )
+	// m_iSelectedPack is the 0-based button index (CSgtcHandler_PackClick
+	// passes the ctor loop index); SgtcPack_GetSlots is 1-based like the ref's
+	// panel +0x248 pack value. Passing the 0-based value made PACK 1 return
+	// early (all-zero gond4h9wp, no grant) and PACK N >= 2 send pack N-1.
+	if ( m_iSelectedPack < 0 || m_iSelectedPack >= SGTC_PACKSEL_COUNT )
 		return;
 
 	int iTeam = 0;
@@ -2017,7 +2028,7 @@ void CSgtcPackSelPanel::FillPackSlots( void )
 	}
 
 	int iSlots[SGTC_PACK_MAX_SLOTS];
-	int iCount = SgtcPack_GetSlots( iTeam, iClass, m_iSelectedPack, iSlots );
+	int iCount = SgtcPack_GetSlots( iTeam, iClass, m_iSelectedPack + 1, iSlots );
 	for ( int i = 0; i < iCount; i++ )
 	{
 		if ( iSlots[i] >= 0 && iSlots[i] < SGTC_WPSEL_SLOTS )
