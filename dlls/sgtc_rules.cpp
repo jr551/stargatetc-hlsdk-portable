@@ -934,7 +934,8 @@ static const SGTCSClassDef s_SgtcCPGoauldClass[6] =
 
 // Weapon-grant table — ref WPLIST (nm 0x220c40) == WPLISTB (nm 0x220a60):
 // identical 28 entries; CP spawn uses WPLISTB, DM spawn WPLIST, both the same
-// names. Distinct from the NULL-headed gond4h9wp menu table in sgtc_player.cpp.
+// names. Same 28-entry ordering as the gond4h9wp menu grant table in
+// sgtc_player.cpp (sgtc_WPLIST) — both are non-NULL throughout.
 static const char * const s_SgtcSpawnWeapons[28] =
 {
 	"weapon_glstaff",	"weapon_usas",		"weapon_batsup",

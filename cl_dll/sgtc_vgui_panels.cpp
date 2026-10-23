@@ -1180,8 +1180,11 @@ public:
 	virtual void SetActiveInfo( int iInput );	// hovered slot (0..27)
 
 	// ref FUN_10029888 + DAT_100ddad8 gate: restore the selection from the
-	// server's 28 per-slot state bytes (Progress message).
-	void ApplyServerState( void );
+	// server's 28 per-slot state bytes (Progress message). bReset is the ref's
+	// `if (0 < DAT_100ddad8) Reset()` prologue — the plain Update path
+	// (flag 0, e.g. a cost/TeamNames refresh) must not wipe the player's
+	// in-progress clicks.
+	void ApplyServerState( bool bReset = true );
 
 	void ToggleSlot( int iSlot );			// click: select / deselect
 	int SelectedSlotCount( void );
@@ -1486,9 +1489,10 @@ void CSgtcWeaponSelPanel::Reset( void )
 // The ref adds (&DAT_100dd9ac)[i] for secondary slots, which for i >= 0xe
 // aliases the *state* array (0x100dd9e4) — the shipped binary therefore adds
 // the state value (2) for every preselected secondary; replicated verbatim.
-void CSgtcWeaponSelPanel::ApplyServerState( void )
+void CSgtcWeaponSelPanel::ApplyServerState( bool bReset )
 {
-	Reset();
+	if ( bReset )
+		Reset();
 
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
 	{
@@ -1674,8 +1678,13 @@ void CSgtcWeaponSelPanel::SetActiveInfo( int iInput )
 
 void CSgtcHandler_WepSelReset::actionPerformed( Panel *panel )
 {
+	// Ref Reset button runs the panel Reset vtable body (FUN_10029888), which
+	// clears the selection AND re-applies the server's per-slot allow bytes, so
+	// blocked rows stay hidden. The local Reset() helper only clears; calling it
+	// alone made every one of the 28 rows visible (orig keeps blocked slots
+	// hidden, A/B capture o_reset.png).
 	if ( m_pPanel )
-		m_pPanel->Reset();
+		m_pPanel->ApplyServerState();
 }
 
 void CSgtcHandler_SlotClick::actionPerformed( Panel *panel )
@@ -1694,7 +1703,8 @@ void CSgtcHandler_SlotOver::cursorEntered( Panel *panel )
 // pfnClientCmd (FUN_10028323 @0x10029131..0x100291a7: the raw DAT_100dda5c
 // flag value 0/1/2 is pushed for every slot — not a normalised 0/1). Our
 // server's gond4h9wp handler reads CMD_ARGV(1..28) as m_iSgtcGondArgs[] and
-// grants on any nonzero value (dlls/sgtc_player.cpp:1151 / :2009).
+// grants only slots whose arg is 1 (or every slot when mp_freeguns > 1) —
+// dlls/sgtc_player.cpp SGTC_GiveFromMenu.
 void CSgtcHandler_WepSelApply::actionPerformed( Panel *panel )
 {
 	if ( !m_pPanel || !gViewPort )
@@ -1876,15 +1886,17 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	// Background (ref +0x164: TextPanel 0x15,0x15, W-0x2a, H-0x2a + border).
 	// ASM @0x1002a1ca: setBgColor(0,0,0x32,0x64) — dark navy translucent,
 	// same as menus 11/12 (0x100ddaf4 is the TextPanel ctor arg, not a colour).
-	TextPanel *pBackground = new TextPanel( "", XRES( 21 ), YRES( 21 ),
-		ScreenWidth - XRES( 42 ), ScreenHeight - YRES( 42 ) );
+	// Ref ctor uses raw pixel constants (VGUI1 ints), not 640x480 design units:
+	// measured orig frame = x 21..1002, y 21..746 at 1024x768.
+	TextPanel *pBackground = new TextPanel( "", 21, 21,
+		ScreenWidth - 42, ScreenHeight - 42 );
 	pBackground->setParent( this );
 	pBackground->setBgColor( 0, 0, 0x32, 0x64 );
 	pBackground->setBorder( new LineBorder( Color( 0, 0, 255, 0 ) ) );
 
 	// Title (ref +0x234, literal "Identifiez-vous"; fg hardcoded periwinkle
 	// 0x8c,0x8c,0xf0 @0x1002a02b — same as menus 11/12, not the scheme colour)
-	m_pTitle = new Label( "", XRES( 40 ), YRES( 16 ) );
+	m_pTitle = new Label( "", 40, 16 );
 	m_pTitle->setParent( this );
 	m_pTitle->setFont( pSchemes->getFont( hTitleScheme ) );
 	m_pTitle->setFgColor( 0x8c, 0x8c, 0xf0, 0 );
@@ -1897,10 +1909,11 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 		char szKey[16];
 		snprintf( szKey, sizeof( szKey ), "#PACK %d", iPack + 1 );	// ref 0x100b403c.. (space, no underscore)
 
+		// Measured orig: x 42..301 (260 wide), rows at y 42 and 79 (pitch 37,
+		// height 29). The menu-12 row pitch/height use the same 0x25/0x1d pair.
 		m_pPackButton[iPack] = new CommandButton(
 			gHUD.m_TextMessage.BufferedLocaliseTextString( szKey ),
-			XRES( 40 ), YRES( 44 ) + iPack * ( BUTTON_SIZE_Y + YRES( 4 ) ),
-			XRES( 260 ), BUTTON_SIZE_Y );
+			42, 42 + iPack * 37, 260, 29 );
 		m_pPackButton[iPack]->setParent( this );
 		m_pPackButton[iPack]->addActionSignal( new CSgtcHandler_PackClick( this, iPack ) );
 		m_pPackButton[iPack]->addInputSignal( new CSgtcHandler_PackOver( this, iPack ) );
@@ -1909,8 +1922,10 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 
 	// Pack info panel (ref +0x174: x 0x143, y 0x2a, W-0x16d, H-0x93, fg 0x8c8c8c,
 	// bg black)
-	m_pInfo = new TextPanel( "", XRES( 323 ), YRES( 42 ),
-		ScreenWidth - XRES( 365 ), ScreenHeight - YRES( 147 ) );
+	// Ref ctor: x 0x143 (323), y 0x2a (42), W-0x16d, H-0x93 — raw pixels.
+	// Measured orig frame x 323..981, y 42..662 at 1024x768.
+	m_pInfo = new TextPanel( "", 323, 42,
+		ScreenWidth - 365, ScreenHeight - 147 );
 	m_pInfo->setParent( this );
 	m_pInfo->setFont( pSchemes->getFont( hBriefingText ) );
 	pSchemes->getFgColor( hBriefingText, r, g, b, a );
@@ -1919,13 +1934,14 @@ CSgtcPackSelPanel::CSgtcPackSelPanel( int iTrans, int iRemoveMe, int x, int y, i
 	m_pInfo->setBorder( new LineBorder( Color( 0, 0, 0xff, 0 ) ) );
 
 	// Bottom buttons (ref +0x114 #Annuler at W/2+0xad, +0x118 #Apply at W/2-0xad)
+	// Measured orig: Apply/Close 152x42 at y 684 (H-84), x = W/2 +/- 173.
 	m_pCancelButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Annuler" ),
-		ScreenWidth / 2 + XRES( 173 ), ScreenHeight - YRES( 84), XRES( 152 ), BUTTON_SIZE_Y );
+		ScreenWidth / 2 + 173, ScreenHeight - 84, 152, 42 );
 	m_pCancelButton->setParent( this );
 	m_pCancelButton->addActionSignal( new CSgtcHandler_DismissMenu() );
 
 	m_pApplyButton = new CommandButton( gHUD.m_TextMessage.BufferedLocaliseTextString( "#Apply" ),
-		ScreenWidth / 2 - XRES( 173 ), ScreenHeight - YRES( 84 ), XRES( 152 ), BUTTON_SIZE_Y );
+		ScreenWidth / 2 - 173, ScreenHeight - 84, 152, 42 );
 	m_pApplyButton->setParent( this );
 	m_pApplyButton->addActionSignal( new CSgtcHandler_PackApply( this ) );
 
@@ -1993,7 +2009,11 @@ void CSgtcPackSelPanel::FillPackSlots( void )
 	for ( int i = 0; i < SGTC_WPSEL_SLOTS; i++ )
 		m_iSlots[i] = 0;
 
-	if ( m_iSelectedPack < 1 || m_iSelectedPack > SGTC_PACKSEL_COUNT )
+	// m_iSelectedPack is the 0-based button index (CSgtcHandler_PackClick
+	// passes the ctor loop index); SgtcPack_GetSlots is 1-based like the ref's
+	// panel +0x248 pack value. Passing the 0-based value made PACK 1 return
+	// early (all-zero gond4h9wp, no grant) and PACK N >= 2 send pack N-1.
+	if ( m_iSelectedPack < 0 || m_iSelectedPack >= SGTC_PACKSEL_COUNT )
 		return;
 
 	int iTeam = 0;
@@ -2008,7 +2028,7 @@ void CSgtcPackSelPanel::FillPackSlots( void )
 	}
 
 	int iSlots[SGTC_PACK_MAX_SLOTS];
-	int iCount = SgtcPack_GetSlots( iTeam, iClass, m_iSelectedPack, iSlots );
+	int iCount = SgtcPack_GetSlots( iTeam, iClass, m_iSelectedPack + 1, iSlots );
 	for ( int i = 0; i < iCount; i++ )
 	{
 		if ( iSlots[i] >= 0 && iSlots[i] < SGTC_WPSEL_SLOTS )
@@ -2197,8 +2217,10 @@ static void SgtcWepSel_ApplyServerState( void )
 	}
 	else
 	{
-		// Costs/budget changed under a live panel: refresh the counters only.
-		s_pWeaponSelPanel->ApplyServerState();
+		// Costs/budget/state changed under a live panel with the reset flag
+		// clear: ref Update runs the state/hide/cost pass only — a full
+		// Reset() here would discard the player's in-progress clicks.
+		s_pWeaponSelPanel->ApplyServerState( false );
 	}
 }
 
