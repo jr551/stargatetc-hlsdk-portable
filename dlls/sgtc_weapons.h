@@ -394,7 +394,16 @@ public:
 class CMedicxgoa : public CBasePlayerWeapon
 {
 public:
-	SGTC_DECLARE_WEAPON();
+	int GetItemInfo( ItemInfo *p );
+	int AddToPlayer( CBasePlayer *pPlayer );
+	void Spawn( void );
+	void Precache( void );
+	BOOL Deploy( void );
+	void PrimaryAttack( void );
+	void SecondaryAttack( void );
+	void Reload( void );
+	void WeaponIdle( void );
+	virtual BOOL UseDecrement( void ) { return TRUE; }	// ref @0xf7078
 	BOOL IsUseable( void );
 	int iItemSlot( void ) { return 4; }
 };
