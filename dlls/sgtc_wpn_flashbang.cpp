@@ -1,4 +1,4 @@
-// sgtc_wpn_flashbang.cpp — StargateTC CFlashBang (split from sgtc_weapons.cpp; NEW file).
+// sgtc_wpn_flashbang.cpp — StargateTC CFlashBang (ref stc_i386.so @0xe6078).
 
 #include "extdll.h"
 #include "util.h"
@@ -10,10 +10,17 @@
 #include "soundent.h"
 #include "sgtc_weapons.h"
 
-// ===========================================================================
-// CFlashBang - flash grenade. Analogue: handgrenade.cpp (timed throw).
-// No client event (client table NULL).
-// ===========================================================================
+// ref client / server anim indices (grenade.mdl).
+enum flashbang_e
+{
+	FLASH_IDLE = 0,
+	FLASH_PINPULL = 2,
+	FLASH_THROW1 = 3,
+	FLASH_THROW2 = 4,
+	FLASH_THROW3 = 5,
+	FLASH_HOLSTER = 6,
+	FLASH_DRAW = 7,
+};
 
 LINK_ENTITY_TO_CLASS( weapon_flashbang, CFlashBang );
 
@@ -32,6 +39,7 @@ void CFlashBang::Precache( void )
 	PRECACHE_MODEL( "models/w_grenade.mdl" );
 	PRECACHE_MODEL( "models/v_grenade.mdl" );
 	PRECACHE_MODEL( "models/p_grenade.mdl" );
+	PRECACHE_SOUND( "weapons/flashbang.wav" );
 	PRECACHE_SOUND( "common/null.wav" );
 }
 
@@ -40,49 +48,144 @@ SGTC_ADD_TO_PLAYER( CFlashBang )
 
 BOOL CFlashBang::Deploy( void )
 {
-	return SGTC_DEPLOY( 2, "models/v_grenade.mdl", "models/p_grenade.mdl", SGTC_DRAW, "crowbar" );
+	m_flStartThrow = 0;
+	m_flReleaseThrow = -1;
+	return SGTC_DEPLOY( 2, "models/v_grenade.mdl", "models/p_grenade.mdl", FLASH_DRAW, "crowbar" );
+}
+
+BOOL CFlashBang::CanHolster( void )
+{
+	return ( m_flStartThrow == 0 && m_flNextPrimaryAttack <= UTIL_WeaponTimeBase() );
 }
 
 void CFlashBang::Holster( int skiplocal )
 {
-	m_pPlayer->m_flNextAttack = UTIL_WeaponTimeBase() + 0.5;
+	m_pPlayer->m_flNextAttack = UTIL_WeaponTimeBase() + 0.5f;
 
-	if( !m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
+	{
+		SendWeaponAnim( FLASH_HOLSTER );
+	}
+	else
 	{
 		m_pPlayer->pev->weapons &= ~( 1 << SGTC_WPN_FLASHBANG );
 		DestroyItem();
 	}
 
-	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "common/null.wav", 1.0, ATTN_NORM );
+	if( m_flStartThrow )
+	{
+		m_flStartThrow = 0.0f;
+		m_flReleaseThrow = 0.0f;
+	}
+
+	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "common/null.wav", 1.0f, ATTN_NORM );
 }
 
 void CFlashBang::PrimaryAttack( void )
 {
+	if( gpGlobals->time < m_pPlayer->m_flGateTravel && !m_pPlayer->IsOnLadder() )
+		return;
+	if( m_flNextPrimaryAttack > UTIL_WeaponTimeBase() )
+		return;
 	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
 		return;
 
-	UTIL_MakeVectors( m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle );
+	m_flStartThrow = gpGlobals->time;
+	m_flReleaseThrow = 0.0f;
+	m_iClip = 0;
 
-	Vector vecSrc = m_pPlayer->pev->origin + m_pPlayer->pev->view_ofs + gpGlobals->v_forward * 16;
-	Vector vecThrow = gpGlobals->v_forward * 400 + m_pPlayer->pev->velocity;
+	SendWeaponAnim( FLASH_PINPULL );
+	m_flNextPrimaryAttack = GetNextAttackDelay( 0.5f );
+	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 0.5f;
+	m_pPlayer->SnagInvis();
+}
 
+void CFlashBang::WeaponIdle( void )
+{
+	if( m_flReleaseThrow == 0.0f && m_flStartThrow )
+		m_flReleaseThrow = gpGlobals->time;
+
+	if( m_flTimeWeaponIdle > UTIL_WeaponTimeBase() )
+		return;
+
+	if( m_flStartThrow )
+	{
+		Vector angThrow = m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle;
+		if( angThrow.x < 0.0f )
+			angThrow.x = -10.0f + angThrow.x * ( ( 90.0f - 10.0f ) / 90.0f );
+		else
+			angThrow.x = -10.0f + angThrow.x * ( ( 90.0f + 10.0f ) / 90.0f );
+
+		float flVel = ( 90.0f - angThrow.x ) * 6.5f;
+		if( flVel > 1000.0f )
+			flVel = 1000.0f;
+
+		UTIL_MakeVectors( angThrow );
+		Vector vecSrc = m_pPlayer->pev->origin + m_pPlayer->pev->view_ofs + gpGlobals->v_forward * 16.0f;
+		Vector vecThrow = gpGlobals->v_forward * flVel + m_pPlayer->pev->velocity;
+
+		float time = m_flStartThrow - gpGlobals->time + 2.0f;
+		if( time < 0.0f )
+			time = 0.0f;
+
+		int iSeed = m_pPlayer->random_seed;
 #ifndef CLIENT_DLL
-	CGrenade::ShootTimed( m_pPlayer->pev, vecSrc, vecThrow, 2.0 );
+		if( flVel < 500.0f )
+			CGrenade::LaunchSlideFlash( m_pPlayer->pev, vecSrc, vecThrow, time, iSeed );
+		else
+			CGrenade::ShootFlash( m_pPlayer->pev, vecSrc, vecThrow, time, iSeed );
 #endif
 
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-	m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
+		if( flVel < 500.0f )
+			SendWeaponAnim( FLASH_THROW1 );
+		else if( flVel < 1000.0f )
+			SendWeaponAnim( FLASH_THROW2 );
+		else
+			SendWeaponAnim( FLASH_THROW3 );
 
-	m_flNextPrimaryAttack = GetNextAttackDelay( 0.5 );
-	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 0.5;
+		m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
+		m_flStartThrow = 0.0f;
+		m_flNextPrimaryAttack = GetNextAttackDelay( 0.5f );
+		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 0.5f;
+		m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType]--;
 
-	if( !m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
-		m_flTimeWeaponIdle = m_flNextSecondaryAttack = m_flNextPrimaryAttack = GetNextAttackDelay( 0.5 );
+		if( !m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
+			m_flTimeWeaponIdle = m_flNextSecondaryAttack = m_flNextPrimaryAttack = GetNextAttackDelay( 0.5f );
+		return;
+	}
+
+	if( m_flReleaseThrow > 0.0f )
+	{
+		m_flStartThrow = 0.0f;
+		if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
+			SendWeaponAnim( FLASH_DRAW );
+		else
+		{
+			RetireWeapon();
+			return;
+		}
+		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10.0f, 15.0f );
+		m_flReleaseThrow = -1.0f;
+		return;
+	}
+
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
+	{
+		int iAnim;
+		float flRand = UTIL_SharedRandomFloat( m_pPlayer->random_seed, 0.0f, 1.0f );
+		if( flRand <= 0.75f )
+		{
+			iAnim = FLASH_IDLE;
+			m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10.0f, 15.0f );
+		}
+		else
+		{
+			iAnim = FLASH_IDLE;
+			m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 2.5f;
+		}
+		SendWeaponAnim( iAnim );
+	}
 }
 
 SGTC_NO_SECONDARY( CFlashBang )
 SGTC_NO_RELOAD( CFlashBang )
-SGTC_WEAPON_IDLE( CFlashBang )
-
-// Reference maps weapon_handgrenade to stock CHandGrenade (handgrenade.cpp);
-// stock registration stands, so CSGTCHandGrenade is removed.

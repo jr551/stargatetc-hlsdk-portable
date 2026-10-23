@@ -27,6 +27,9 @@
 #include "soundent.h"
 #include "decals.h"
 #include "game.h"
+#include "player.h"
+#include "sgtc_rules.h"
+#include "shake.h"
 
 //===================grenade
 
@@ -465,6 +468,192 @@ CGrenade *CGrenade::ShootSatchelCharge( entvars_t *pevOwner, Vector vecStart, Ve
 	pGrenade->pev->friction = 0.9f;
 
 	return pGrenade;
+}
+
+// ref stc_i386.so — CGrenade::ShootFlash / FlashThink / FlashSlide (CS-family flashbang).
+static const float SGTC_FLASH_SOUND_RADIUS = 400.0f;	// ref InsertSound 0x190
+static const float SGTC_FLASH_BLIND_RADIUS = 2048.0f;
+static const float SGTC_FLASH_SLIDE_SPEED = 100.0f;	// ref FlashSlide 2D length gate
+
+static void SGTC_ApplyFlashToPlayer( CBasePlayer *pPlayer, const Vector &vecFlash )
+{
+	if( !pPlayer || !pPlayer->IsAlive() )
+		return;
+
+	Vector vecEye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
+	Vector vecToFlash = vecFlash - vecEye;
+	float flDist = vecToFlash.Length();
+	if( flDist > SGTC_FLASH_BLIND_RADIUS )
+		return;
+
+	Vector vecView;
+	vecView.x = pPlayer->pev->v_angle.x;
+	vecView.y = pPlayer->pev->v_angle.y;
+	vecView.z = 0.0f;
+	UTIL_MakeVectors( vecView );
+
+	Vector vecDir = vecToFlash.Normalize();
+	if( DotProduct( gpGlobals->v_forward, vecDir ) < 0.35f )
+		return;
+
+	TraceResult tr;
+	UTIL_TraceLine( vecEye, vecFlash, ignore_monsters, ENT( pPlayer->pev ), &tr );
+	if( tr.flFraction < 1.0f && tr.pHit != ENT( pPlayer->pev ) )
+		return;
+
+	float flHold = 2.0f;
+	if( flDist > 512.0f )
+		flHold *= ( 1.0f - ( flDist - 512.0f ) / ( SGTC_FLASH_BLIND_RADIUS - 512.0f ) );
+	if( flHold < 0.25f )
+		flHold = 0.25f;
+
+	UTIL_ScreenFade( pPlayer, Vector( 255, 255, 255 ), 0.5f, flHold, 255, FFADE_OUT );
+	if( gmsgConcuss )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgConcuss, NULL, pPlayer->pev );
+			WRITE_BYTE( 150 );
+			WRITE_BYTE( 0 );
+		MESSAGE_END();
+	}
+}
+
+static void SGTC_FlashDetonate( CGrenade *pGrenade )
+{
+	if( !pGrenade )
+		return;
+
+	Vector vecFlash = pGrenade->pev->origin;
+	EMIT_SOUND( ENT( pGrenade->pev ), CHAN_WEAPON, "weapons/flashbang.wav", 1.0f, ATTN_NORM );
+
+	CSoundEnt::InsertSound( bits_SOUND_COMBAT, vecFlash, (int)SGTC_FLASH_SOUND_RADIUS, 0.3f );
+
+	CBaseEntity *pEntity = NULL;
+	while( ( pEntity = UTIL_FindEntityInSphere( pEntity, vecFlash, SGTC_FLASH_BLIND_RADIUS ) ) != NULL )
+	{
+		if( !pEntity->IsPlayer() )
+			continue;
+		CBasePlayer *pPlayer = (CBasePlayer *)pEntity;
+		if( pPlayer->edict() == pGrenade->pev->owner )
+			continue;
+		SGTC_ApplyFlashToPlayer( pPlayer, vecFlash );
+	}
+
+	UTIL_Remove( pGrenade );
+}
+
+static CGrenade *SGTC_SpawnFlashGrenade( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity, float time, int iSeed, BOOL bSlide )
+{
+	CGrenade *pGrenade = GetClassPtr( (CGrenade *)NULL );
+	pGrenade->Spawn();
+
+	UTIL_SetOrigin( pGrenade->pev, vecStart );
+	pGrenade->pev->velocity = vecVelocity;
+	pGrenade->pev->angles = UTIL_VecToAngles( pGrenade->pev->velocity );
+	pGrenade->pev->owner = ENT( pevOwner );
+	pGrenade->pev->dmg = 0;
+	pGrenade->pev->team = iSeed;
+	pGrenade->pev->dmgtime = gpGlobals->time + time;
+
+	SET_MODEL( ENT( pGrenade->pev ), "models/w_grenade.mdl" );
+	pGrenade->pev->sequence = RANDOM_LONG( 3, 6 );
+	pGrenade->ResetSequenceInfo();
+	pGrenade->pev->framerate = 1.0f;
+	pGrenade->pev->gravity = 0.5f;
+	pGrenade->pev->friction = 0.8f;
+
+	if( bSlide )
+	{
+		pGrenade->SetThink( &CGrenade::SlideFlashThink );
+		pGrenade->SetTouch( &CGrenade::FlashSlide );
+	}
+	else
+	{
+		pGrenade->SetTouch( &CGrenade::BounceTouch );
+		pGrenade->SetThink( &CGrenade::FlashThink );
+	}
+	pGrenade->pev->nextthink = gpGlobals->time + 0.1f;
+
+	return pGrenade;
+}
+
+CGrenade *CGrenade::ShootFlash( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity, float time, int iSeed )
+{
+	return SGTC_SpawnFlashGrenade( pevOwner, vecStart, vecVelocity, time, iSeed, FALSE );
+}
+
+CGrenade *CGrenade::LaunchSlideFlash( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity, float time, int iSeed )
+{
+	return SGTC_SpawnFlashGrenade( pevOwner, vecStart, vecVelocity, time, iSeed, TRUE );
+}
+
+void CGrenade::FlashThink( void )
+{
+	if( pev->dmgtime > gpGlobals->time )
+	{
+		pev->effects |= EF_BRIGHTLIGHT;
+		pev->nextthink = gpGlobals->time + 0.1f;
+		return;
+	}
+
+	SGTC_FlashDetonate( this );
+}
+
+void CGrenade::SlideFlashThink( void )
+{
+	if( pev->dmgtime <= gpGlobals->time )
+	{
+		SGTC_FlashDetonate( this );
+		return;
+	}
+
+	pev->effects |= EF_BRIGHTLIGHT;
+	pev->nextthink = gpGlobals->time + 0.1f;
+
+	if( pev->flags & FL_ONGROUND )
+	{
+		if( pev->sequence != 5 )
+		{
+			pev->sequence = 5;
+			pev->frame = 0.0f;
+			ResetSequenceInfo();
+		}
+		pev->renderamt = pev->renderamt + 5.0f;
+		if( pev->renderamt > 255.0f )
+			pev->renderamt = 255.0f;
+	}
+	else if( pev->sequence != 0 )
+	{
+		pev->sequence = 0;
+		pev->frame = 0.0f;
+		pev->renderamt = pev->renderamt - 10.0f;
+		if( pev->renderamt < 0.0f )
+			pev->renderamt = 0.0f;
+		ResetSequenceInfo();
+	}
+}
+
+void CGrenade::FlashSlide( CBaseEntity *pOther )
+{
+	if( pOther && pOther->edict() == pev->owner )
+		return;
+
+	if( pev->velocity.Length2D() <= SGTC_FLASH_SLIDE_SPEED )
+	{
+		TraceResult tr;
+		UTIL_TraceLine( pev->origin, pev->origin + pev->velocity * 10.0f, ignore_monsters, ENT( pev ), &tr );
+		if( tr.flFraction >= 1.0f )
+		{
+			if( pOther && pOther->IsPlayer() && pOther->IsAlive() )
+			{
+				CBasePlayer *pPlayer = (CBasePlayer *)pOther;
+				if( !( pPlayer->pev->flags & FL_FROZEN ) )
+					SGTC_ApplyFlashToPlayer( pPlayer, pev->origin );
+			}
+		}
+	}
+
+	SlideTouch( pOther );
+	StudioFrameAdvance( 0.0f );
 }
 
 void CGrenade::UseSatchelCharges( entvars_t *pevOwner, SATCHELCODE code )

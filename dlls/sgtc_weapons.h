@@ -302,8 +302,17 @@ private:
 class CFlashBang : public CBasePlayerWeapon
 {
 public:
-	SGTC_DECLARE_WEAPON();
-	BOOL CanHolster( void ) { return TRUE; }
+	int GetItemInfo( ItemInfo *p );
+	int AddToPlayer( CBasePlayer *pPlayer );
+	void Spawn( void );
+	void Precache( void );
+	BOOL Deploy( void );
+	void PrimaryAttack( void );
+	void SecondaryAttack( void );
+	void Reload( void );
+	void WeaponIdle( void );
+	virtual BOOL UseDecrement( void ) { return TRUE; }
+	BOOL CanHolster( void );
 	void Holster( int skiplocal = 0 );
 	int iItemSlot( void ) { return 5; }
 };

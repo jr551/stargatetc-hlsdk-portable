@@ -578,7 +578,8 @@ int CHudAmmo::MsgFunc_CurWeapon( const char *pszName, int iSize, void *pbuf )
 		fOnTarget = TRUE;
 	}
 
-	if( iId < 1 )
+	// SGTC weapon_flashbang uses iId 0 (SGTC_WPN_FLASHBANG); ref client.dll accepts 0.
+	if( iId < 0 )
 	{
 		SetCrosshair( 0, nullrc, 0, 0, 0 );
 		// Clear out the weapon so we don't keep drawing the last active weapon's ammo. - Solokiller

@@ -34,6 +34,8 @@ public:
 	static CGrenade *ShootTimed( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity, float time );
 	static CGrenade *ShootContact( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity );
 	static CGrenade *ShootSatchelCharge( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity );
+	static CGrenade *ShootFlash( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity, float time, int iSeed );
+	static CGrenade *LaunchSlideFlash( entvars_t *pevOwner, Vector vecStart, Vector vecVelocity, float time, int iSeed );
 	static void UseSatchelCharges( entvars_t *pevOwner, SATCHELCODE code );
 
 	void Explode( Vector vecSrc, Vector vecAim );
@@ -48,6 +50,9 @@ public:
 	void EXPORT Detonate( void );
 	void EXPORT DetonateUse( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void EXPORT TumbleThink( void );
+	void EXPORT FlashThink( void );
+	void EXPORT SlideFlashThink( void );
+	void EXPORT FlashSlide( CBaseEntity *pOther );
 
 	virtual void BounceSound( void );
 	virtual int	BloodColor( void ) { return DONT_BLEED; }
