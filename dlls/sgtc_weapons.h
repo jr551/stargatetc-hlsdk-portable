@@ -167,6 +167,7 @@ class CPsg1 : public CBasePlayerWeapon
 public:
 	SGTC_DECLARE_WEAPON();
 	int iItemSlot( void ) { return 4; }
+	void Holster( int skiplocal );
 private:
 	unsigned short m_usFire;
 };
@@ -494,13 +495,16 @@ void cls::WeaponIdle( void )												\
 		UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );			\
 }
 
-#define SGTC_WEAPON_RELOAD( cls, MAXCLIP )										\
+#define SGTC_WEAPON_RELOAD_ANIM( cls, MAXCLIP, ANIM )							\
 void cls::Reload( void )													\
 {																			\
 	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || m_iClip == MAXCLIP )\
 		return;																\
-	DefaultReload( MAXCLIP, SGTC_RELOAD, 1.5 );								\
+	DefaultReload( MAXCLIP, ANIM, 1.5 );									\
 }
+
+#define SGTC_WEAPON_RELOAD( cls, MAXCLIP )										\
+	SGTC_WEAPON_RELOAD_ANIM( cls, MAXCLIP, SGTC_RELOAD )
 
 #define SGTC_NO_RELOAD( cls )													\
 void cls::Reload( void )													\

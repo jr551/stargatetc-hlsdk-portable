@@ -106,6 +106,15 @@ static char *SgtcPanels_LoadFile( const char *pszFile )
 //   - the dismissal clears the next time ANY menu front is dismissed (orig:
 //     menu-10 Ok -> the next menu-11 resend re-popped 11).
 static int s_iSgtcDismissedMenu = 0;	// SGTC menu id last closed by the user
+static float s_flSgtcDismissedAt = 0.0f;	// gEngfuncs.GetClientTime() at that close
+
+// The user-close mark only suppresses the *immediate* server resend (the
+// dead-observer menu-11 resend runs at 1 Hz). The ref has no dismissal memory:
+// ShowVGUIMenu dedups against the live menu chain only (REA
+// .rea/spawn_vgui_rea.md), so a later explicit re-show — e.g. vguimenuyoyo 12
+// after Close, which the orig honours — must install. Without a window the mark
+// blocked every same-id re-show for the rest of the level.
+#define SGTC_DISMISS_GUARD_SEC 2.0f
 
 // ids the stock TeamFortressViewport owns (2..9). SGTC ids are 10/11/12/60.
 static bool SgtcPanels_IsStockMenuId( int iMenu )
@@ -118,7 +127,11 @@ static bool SgtcPanels_IsStockMenuId( int iMenu )
 static bool SgtcPanels_ShouldShow( int iMenu )
 {
 	if ( s_iSgtcDismissedMenu == iMenu )
-		return false;
+	{
+		if ( ( gEngfuncs.GetClientTime() - s_flSgtcDismissedAt ) < SGTC_DISMISS_GUARD_SEC )
+			return false;
+		s_iSgtcDismissedMenu = 0;	// guard expired: a later show is legitimate
+	}
 
 	for ( CMenuPanel *p = gViewPort->m_pCurrentMenu; p; p = p->GetNextMenu() )
 	{
@@ -215,6 +228,7 @@ public:
 		if ( gViewPort && gViewPort->m_pCurrentMenu )
 		{
 			s_iSgtcDismissedMenu = gViewPort->m_pCurrentMenu->GetMenuID();
+			s_flSgtcDismissedAt = gEngfuncs.GetClientTime();
 			gEngfuncs.Con_Printf( "[sgtc] DismissMenu id %d\n", s_iSgtcDismissedMenu );
 		}
 		if ( gViewPort )
@@ -240,6 +254,7 @@ public:
 		if ( gViewPort && gViewPort->m_pCurrentMenu )
 		{
 			s_iSgtcDismissedMenu = gViewPort->m_pCurrentMenu->GetMenuID();
+			s_flSgtcDismissedAt = gEngfuncs.GetClientTime();
 			gEngfuncs.Con_Printf( "[sgtc] JoinMark id %d\n", s_iSgtcDismissedMenu );
 		}
 	}

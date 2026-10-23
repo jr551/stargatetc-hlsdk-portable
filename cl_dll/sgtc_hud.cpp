@@ -1006,7 +1006,10 @@ void CHudSgtc::Think( void )
 		return;
 	if( !( gHUD.m_iWeaponBits & ( 1 << WEAPON_SUIT ) ) )	// ref DAT_100ed6d0 & 0x80000000
 		return;
-	if( gHUD.m_iHideHUDDisplay & 0x5 )			// ref DAT_100e9d0c & 5 (WEAPONS|ALL)
+	// SGTC sends m_iHideHUD=9 (WEAPONS|HEALTH) on spawn, but the original still
+	// paints its custom icon panel with that value. Gate only on the user's
+	// full-hide flag; the stock client display is not the ref's hide global.
+	if( gHUD.m_iHideHUDDisplay & HIDEHUD_ALL )		// ref DAT_100e9d0c & 4
 		return;
 
 	if( !( m_iFlags & HUDELEM_ACTIVE ) )			// ref this->+0x10 & 1
