@@ -343,7 +343,6 @@ void CBasePlayer::SGTC_TickShieldEnergyAndMaxspeed( void )
 	static const float kRunSpeed = 180.0f;		// rodata @0x1d7564
 	static const float kLowStaminaSpeed = 10.0f;	// rodata @0x1d7554
 	static const float kZatVelZ = -20.0f;		// rodata @0x1d7560
-	static const float kLatchMoveMin = 0.125f;	// rodata @0x1d7528
 
 	if( m_bZatTouchFlag && pev->velocity.z <= 0.0f )
 		pev->velocity.z = kZatVelZ;
@@ -371,19 +370,22 @@ void CBasePlayer::SGTC_TickShieldEnergyAndMaxspeed( void )
 		}
 	}
 
-	if( m_flMaxSpeedLatch > kLatchMoveMin )
-		return;
-
-	if( pev->flags & FL_ONGROUND )
+	// ref CBasePlayer::SgtcThink (REA 0x14963a..0x14b326): the maxspeed block
+	// runs only while the latch (+0xa7c) is > 0. It restores the latch, not a
+	// ground constant: weapons bit 18 (glstaff) clear OR maxspeed <= 180 ->
+	// maxspeed = latch; otherwise 180; stamina < 20 -> 10. The old port read
+	// this as an unconditional FL_ONGROUND 180 clamp, which overrode every
+	// class maxspeed (Prima 275) on the first ground tick.
+	if( m_flMaxSpeedLatch > 0.0f )
 	{
-		if( pev->maxspeed != kRunSpeed )
+		if( ( ( pev->weapons >> 18 ) & 1 ) != 1 || pev->maxspeed <= kRunSpeed )
+			pev->maxspeed = m_flMaxSpeedLatch;
+		else
 			pev->maxspeed = kRunSpeed;
-	}
-	else
-		pev->maxspeed = m_flMaxSpeedLatch;
 
-	if( m_iStamina <= 19 )
-		pev->maxspeed = kLowStaminaSpeed;
+		if( m_iStamina < 20 )
+			pev->maxspeed = kLowStaminaSpeed;
+	}
 }
 
 // ref @0x13a3a5 — when pev+0x14c < 0 and not sprinting, PointContents → renderamt.
