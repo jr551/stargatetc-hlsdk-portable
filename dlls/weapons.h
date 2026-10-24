@@ -109,8 +109,8 @@ public:
 #define BOLT_MAX_CARRY			50
 #define ROCKET_MAX_CARRY		5
 #define HANDGRENADE_MAX_CARRY	10
-#define SATCHEL_MAX_CARRY		5
-#define TRIPMINE_MAX_CARRY		5
+#define SATCHEL_MAX_CARRY		2	// SGTC ref weapon_c4 / GetItemInfo (was HL 5)
+#define TRIPMINE_MAX_CARRY		2	// SGTC ref weapon_mine / GetItemInfo (was HL 5)
 #define SNARK_MAX_CARRY			15
 #define HORNET_MAX_CARRY		8
 #define M203_GRENADE_MAX_CARRY	10
