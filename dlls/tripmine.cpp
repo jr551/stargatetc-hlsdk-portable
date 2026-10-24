@@ -376,7 +376,7 @@ void CTripmine::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_TRIPMINE;
-	SET_MODEL( ENT( pev ), "models/v_tripmine.mdl" );
+	SET_MODEL( ENT( pev ), "models/w_mine.mdl" );
 	pev->frame = 0;
 
 #ifdef CLIENT_DLL
@@ -404,8 +404,9 @@ void CTripmine::Spawn()
 
 void CTripmine::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_tripmine.mdl" );
-	PRECACHE_MODEL( "models/p_tripmine.mdl" );
+	PRECACHE_MODEL( "models/v_mine.mdl" );
+	PRECACHE_MODEL( "models/p_mine.mdl" );
+	PRECACHE_MODEL( "models/w_mine.mdl" );
 	UTIL_PrecacheOther( "monster_tripmine" );
 
 	m_usTripFire = PRECACHE_EVENT( 1, "events/tripfire.sc" );
@@ -419,8 +420,8 @@ int CTripmine::GetItemInfo( ItemInfo *p )
 	p->pszAmmo2 = NULL;
 	p->iMaxAmmo2 = -1;
 	p->iMaxClip = WEAPON_NOCLIP;
-	p->iSlot = 4;
-	p->iPosition = 2;
+	p->iSlot = 5;		// SGTC ref weapon_mine GetItemInfo (HL tripmine used 4)
+	p->iPosition = 3;	// SGTC ref weapon_mine (HL used 2)
 	p->iId = m_iId = WEAPON_TRIPMINE;
 	p->iWeight = TRIPMINE_WEIGHT;
 	p->iFlags = ITEM_FLAG_LIMITINWORLD | ITEM_FLAG_EXHAUSTIBLE;
@@ -431,7 +432,7 @@ int CTripmine::GetItemInfo( ItemInfo *p )
 BOOL CTripmine::Deploy()
 {
 	pev->body = 0;
-	return DefaultDeploy( "models/v_tripmine.mdl", "models/p_tripmine.mdl", TRIPMINE_DRAW, "trip" );
+	return DefaultDeploy( "models/v_mine.mdl", "models/p_mine.mdl", TRIPMINE_DRAW, "trip" );
 }
 
 void CTripmine::Holster( int skiplocal /* = 0 */ )
