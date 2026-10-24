@@ -16,6 +16,13 @@
 // The freevgui platform's engine table, filled by InitVGUISupportAPI at load
 // (INTERNAL_VGUI_SUPPORT build — the table lives in client.so, statically
 // linked). NULL until the engine calls InitVGUISupportAPI.
+//
+// Only the statically linked FreeVGUI build defines that table
+// (freevgui/platform/xash3d-fwgs/app.cpp). Win32 GoldSrc links the engine's
+// vgui2.dll instead, which has no vguiapi_t and never calls
+// InitVGUISupportAPI, so there is nothing to drive there.
+#ifdef INTERNAL_VGUI_SUPPORT
+
 namespace vgui { extern vguiapi_t *g_engine; }
 
 void SGTC_VGuiSetCursor( VGUI_DefaultCursor cursor )
@@ -23,3 +30,12 @@ void SGTC_VGuiSetCursor( VGUI_DefaultCursor cursor )
 	if( vgui::g_engine && vgui::g_engine->CursorSelect )
 		vgui::g_engine->CursorSelect( cursor );
 }
+
+#else
+
+void SGTC_VGuiSetCursor( VGUI_DefaultCursor cursor )
+{
+	(void)cursor;
+}
+
+#endif // INTERNAL_VGUI_SUPPORT
