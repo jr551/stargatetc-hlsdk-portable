@@ -42,6 +42,7 @@ void CP90::Precache( void )
 	PRECACHE_SOUND( "weapons/357_cock1.wav" );
 
 	m_usFire = PRECACHE_EVENT( 1, "events/p90.sc" );
+	m_usFireL = PRECACHE_EVENT( 1, "events/p90l.sc" );
 }
 
 SGTC_GETITEM( CP90, SGTC_AMMO_P90, 250, 50, 2, 0, SGTC_WPN_P90, 0, 15 )

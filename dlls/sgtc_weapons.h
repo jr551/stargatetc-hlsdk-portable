@@ -160,6 +160,7 @@ public:
 	int iItemSlot( void ) { return 1; }
 private:
 	unsigned short m_usFire;
+	unsigned short m_usFireL;
 };
 
 class CPsg1 : public CBasePlayerWeapon
