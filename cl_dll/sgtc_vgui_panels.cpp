@@ -1182,12 +1182,15 @@ public:
 	virtual void paintBackground()
 	{
 		// dark navy fill (matches the +0x168 background tint) then the outline:
-		// blue at rest, red while armed/selected.
+		// blue at rest, red only while the cursor arms the button. A selected
+		// slot is shown by its white label, not the outline — the orig's A/B
+		// (menu 12: Zat'ni'katel selected, Staff Weapon hovered) draws red only
+		// on the hovered row, and Reset returns every row to blue.
 		int w, h;
 		getPaintSize( w, h );
 		drawSetColor( 0, 0, 0x32, 0x20 );
 		drawFilledRect( 0, 0, w, h );
-		if ( isArmed() || isSelected() )
+		if ( isArmed() )
 			drawSetColor( 0xff, 0, 0, 0 );
 		else
 			drawSetColor( 0, 0, 0xff, 0 );
@@ -1490,6 +1493,10 @@ void CSgtcWeaponSelPanel::Reset( void )
 			s_iWepFlag[i] = 0;
 		m_iSelected[i] = 0;
 		m_pSlotButton[i]->setArmed( false );
+		// freevgui's momentary controller leaves Button::selected set when a
+		// release never reaches the button; a stale selected state survived
+		// Reset in the live A/B and kept the row painted as if armed.
+		m_pSlotButton[i]->setSelectedDirect( false );
 		m_pSlotButton[i]->setFgColor( 0x8c, 0x8c, 0x8c, 0 );
 		m_pSlotButton[i]->setVisible( true );	// ref vtable+0x24 = setVisible
 		if ( m_pSlotCost[i] )
