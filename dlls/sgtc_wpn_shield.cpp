@@ -19,7 +19,7 @@ static unsigned short s_usShieldFire;
 // Event: events/shield.sc.
 // ===========================================================================
 
-// SGTC: weapon_shield unregistered — ref/stc_i386.so link table has no weapon_shield
+LINK_ENTITY_TO_CLASS( weapon_shield, CShieldGun );
 
 void CShieldGun::Spawn( void )
 {

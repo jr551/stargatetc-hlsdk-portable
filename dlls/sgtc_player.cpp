@@ -2066,7 +2066,7 @@ static const char * const sgtc_WPLIST[28] =
 	"weapon_main",		"weapon_zat",		"weapon_lance",
 	"weapon_reetou",	"weapon_zatarc",	"weapon_tacgun",
 	"weapon_handgrenade","weapon_mine",		"weapon_invis",
-	"weapon_invis",		"weapon_gacgoa",	"weapon_c4",
+	"weapon_shield",	"weapon_gacgoa",	"weapon_c4",
 	"weapon_larve",		"weapon_medic",		"weapon_smokegrenade",
 	"weapon_nervegrenade","weapon_narcogrenade","weapon_mustardgrenade",
 	"weapon_goaregen"

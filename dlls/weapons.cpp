@@ -328,6 +328,7 @@ void W_Precache( void )
 	UTIL_PrecacheOtherWeapon( "weapon_glstaff" );
 	UTIL_PrecacheOtherWeapon( "weapon_goaregen" );
 	UTIL_PrecacheOtherWeapon( "weapon_invis" );
+	UTIL_PrecacheOtherWeapon( "weapon_shield" );
 	UTIL_PrecacheOtherWeapon( "weapon_lance" );
 	UTIL_PrecacheOtherWeapon( "weapon_larve" );
 	UTIL_PrecacheOtherWeapon( "weapon_m16" );

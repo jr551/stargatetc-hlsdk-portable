@@ -31,6 +31,7 @@ void CGrenadeChoc::Precache( void )
 {
 	PRECACHE_MODEL( "models/w_gacgoa.mdl" );
 	PRECACHE_MODEL( "models/v_gacgoa.mdl" );
+	PRECACHE_MODEL( "models/v_gacgoaT.mdl" );
 	PRECACHE_MODEL( "models/p_gacgoa.mdl" );
 	PRECACHE_SOUND( "weapons/gacgoa.wav" );
 	PRECACHE_SOUND( "weapons/gacencl.wav" );
