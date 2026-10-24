@@ -22,6 +22,11 @@
 #include "player.h"
 #include "soundent.h"
 #include "gamerules.h"
+#include "sgtc_weapons.h"
+
+// ref/stc_i386.so CMP5::GetItemInfo / client WeaponList (sgtc_weapons_client.cpp)
+#define SGTC_MP5_MAX_CLIP 30
+#define SGTC_MP5_MAX_CARRY 200
 
 enum mp5_e
 {
@@ -49,7 +54,7 @@ void CMP5::Spawn()
 {
 	pev->classname = MAKE_STRING( "weapon_9mmAR" ); // hack to allow for old names
 	Precache();
-	SET_MODEL( ENT( pev ), "models/w_9mmAR.mdl" );
+	SET_MODEL( ENT( pev ), "models/w_mp5.mdl" );
 	m_iId = WEAPON_MP5;
 
 	m_iDefaultAmmo = MP5_DEFAULT_GIVE;
@@ -66,9 +71,9 @@ void CMP5::Spawn()
 
 void CMP5::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_9mmAR.mdl" );
-	PRECACHE_MODEL( "models/w_9mmAR.mdl" );
-	PRECACHE_MODEL( "models/p_9mmAR.mdl" );
+	PRECACHE_MODEL( "models/v_mp5.mdl" );
+	PRECACHE_MODEL( "models/w_mp5.mdl" );
+	PRECACHE_MODEL( "models/p_mp5.mdl" );
 
 	m_iShell = PRECACHE_MODEL( "models/shell.mdl" );// brass shellTE_MODEL
 
@@ -96,13 +101,13 @@ void CMP5::Precache( void )
 int CMP5::GetItemInfo( ItemInfo *p )
 {
 	p->pszName = STRING( pev->classname );
-	p->pszAmmo1 = "9mm";
-	p->iMaxAmmo1 = _9MM_MAX_CARRY;
-	p->pszAmmo2 = "ARgrenades";
-	p->iMaxAmmo2 = M203_GRENADE_MAX_CARRY;
-	p->iMaxClip = MP5_MAX_CLIP;
+	p->pszAmmo1 = SGTC_AMMO_MP5;
+	p->iMaxAmmo1 = SGTC_MP5_MAX_CARRY;
+	p->pszAmmo2 = NULL;
+	p->iMaxAmmo2 = -1;
+	p->iMaxClip = SGTC_MP5_MAX_CLIP;
 	p->iSlot = 2;
-	p->iPosition = 0;
+	p->iPosition = 2;
 	p->iFlags = 0;
 	p->iId = m_iId = WEAPON_MP5;
 	p->iWeight = MP5_WEIGHT;
@@ -124,7 +129,7 @@ int CMP5::AddToPlayer( CBasePlayer *pPlayer )
 
 BOOL CMP5::Deploy()
 {
-	return DefaultDeploy( "models/v_9mmAR.mdl", "models/p_9mmAR.mdl", MP5_DEPLOY, "mp5" );
+	return DefaultDeploy( "models/v_mp5.mdl", "models/p_mp5.mdl", MP5_DEPLOY, "mp5" );
 }
 
 void CMP5::PrimaryAttack()
@@ -245,10 +250,10 @@ void CMP5::SecondaryAttack( void )
 
 void CMP5::Reload( void )
 {
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || m_iClip == MP5_MAX_CLIP )
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || m_iClip == SGTC_MP5_MAX_CLIP )
 		return;
 
-	DefaultReload( MP5_MAX_CLIP, MP5_RELOAD, 1.5f );
+	DefaultReload( SGTC_MP5_MAX_CLIP, MP5_RELOAD, 1.5f );
 }
 
 void CMP5::WeaponIdle( void )
@@ -292,7 +297,7 @@ class CMP5AmmoClip : public CBasePlayerAmmo
 	}
 	BOOL AddAmmo( CBaseEntity *pOther ) 
 	{ 
-		int bResult = ( pOther->GiveAmmo( AMMO_MP5CLIP_GIVE, "9mm", _9MM_MAX_CARRY ) != -1 );
+		int bResult = ( pOther->GiveAmmo( SGTC_MP5_MAX_CLIP, SGTC_AMMO_MP5, SGTC_MP5_MAX_CARRY ) != -1 );
 		if( bResult )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );
