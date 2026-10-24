@@ -289,6 +289,7 @@ class CCouteau : public CBasePlayerWeapon
 {
 public:
 	SGTC_DECLARE_WEAPON();
+	void EXPORT Smack( void );
 	void EXPORT SwingAgain( void );
 	int Swing( int fFirst );
 	void ThrowIt( void );
