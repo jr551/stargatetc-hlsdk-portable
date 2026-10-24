@@ -21,6 +21,15 @@
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
+#include "sgtc_weapons.h"
+
+// SGTC weapon_spas uses stock CShotgun (ref/stc_i386.so link table).
+#define SGTC_SPAS_MAX_CLIP 8
+#if !defined( CLIENT_WEAPONS )
+#define SPAS_EVENT_FLAGS SGTC_EVENT_FLAGS
+#else
+#define SPAS_EVENT_FLAGS FEV_NOTHOST
+#endif
 
 // special deathmatch shotgun spreads
 #define VECTOR_CONE_DM_SHOTGUN	Vector( 0.08716, 0.04362, 0.00 )// 10 degrees by 5 degrees
@@ -45,38 +54,31 @@ enum shotgun_e
 void CShotgun::Spawn()
 {
 	Precache();
-	m_iId = WEAPON_SHOTGUN;
-	SET_MODEL( ENT( pev ), "models/w_shotgun.mdl" );
+	m_iId = SGTC_WPN_SHOTGUN_STOCK;
+	SET_MODEL( ENT( pev ), "models/w_spas.mdl" );
 
-	m_iDefaultAmmo = SHOTGUN_DEFAULT_GIVE;
+	m_iDefaultAmmo = 60;
 
 	FallInit();// get ready to fall
 }
 
 void CShotgun::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_shotgun.mdl" );
-	PRECACHE_MODEL( "models/w_shotgun.mdl" );
-	PRECACHE_MODEL( "models/p_shotgun.mdl" );
+	PRECACHE_MODEL( "models/v_spas.mdl" );
+	PRECACHE_MODEL( "models/w_spas.mdl" );
+	PRECACHE_MODEL( "models/p_spas.mdl" );
 
-	m_iShell = PRECACHE_MODEL( "models/shotgunshell.mdl" );// shotgun shell
+	m_iShell = PRECACHE_MODEL( "models/shell.mdl" );
 
 	PRECACHE_SOUND( "items/9mmclip1.wav" );
+	PRECACHE_SOUND( "weapons/reload1.wav" );
+	PRECACHE_SOUND( "weapons/reload3.wav" );
+	PRECACHE_SOUND( "weapons/spastir.wav" );
+	PRECACHE_SOUND( "weapons/spaspomp.wav" );
+	PRECACHE_SOUND( "weapons/357_cock1.wav" );
 
-	PRECACHE_SOUND( "weapons/dbarrel1.wav" );//shotgun
-	PRECACHE_SOUND( "weapons/sbarrel1.wav" );//shotgun
-
-	PRECACHE_SOUND( "weapons/reload1.wav" );	// shotgun reload
-	PRECACHE_SOUND( "weapons/reload3.wav" );	// shotgun reload
-
-	//PRECACHE_SOUND( "weapons/sshell1.wav" );	// shotgun reload - played on client
-	//PRECACHE_SOUND( "weapons/sshell3.wav" );	// shotgun reload - played on client
-	
-	PRECACHE_SOUND( "weapons/357_cock1.wav" ); // gun empty sound
-	PRECACHE_SOUND( "weapons/scock1.wav" );	// cock gun
-
-	m_usSingleFire = PRECACHE_EVENT( 1, "events/shotgun1.sc" );
-	m_usDoubleFire = PRECACHE_EVENT( 1, "events/shotgun2.sc" );
+	m_usSingleFire = PRECACHE_EVENT( 1, "events/spas.sc" );
+	m_usDoubleFire = PRECACHE_EVENT( 1, "events/spas2.sc" );
 }
 
 int CShotgun::AddToPlayer( CBasePlayer *pPlayer )
@@ -94,23 +96,27 @@ int CShotgun::AddToPlayer( CBasePlayer *pPlayer )
 int CShotgun::GetItemInfo( ItemInfo *p )
 {
 	p->pszName = STRING( pev->classname );
-	p->pszAmmo1 = "buckshot";
-	p->iMaxAmmo1 = BUCKSHOT_MAX_CARRY;
+	p->pszAmmo1 = SGTC_AMMO_BUCKSHOT;
+	p->iMaxAmmo1 = 125;
 	p->pszAmmo2 = NULL;
 	p->iMaxAmmo2 = -1;
-	p->iMaxClip = SHOTGUN_MAX_CLIP;
+	p->iMaxClip = SGTC_SPAS_MAX_CLIP;
 	p->iSlot = 2;
-	p->iPosition = 1;
+	p->iPosition = 3;
 	p->iFlags = 0;
-	p->iId = m_iId = WEAPON_SHOTGUN;
-	p->iWeight = SHOTGUN_WEIGHT;
+	p->iId = m_iId = SGTC_WPN_SHOTGUN_STOCK;
+	p->iWeight = 14;
 
 	return 1;
 }
 
 BOOL CShotgun::Deploy()
 {
-	return DefaultDeploy( "models/v_shotgun.mdl", "models/p_shotgun.mdl", SHOTGUN_DRAW, "shotgun" );
+#ifndef CLIENT_WEAPONS
+	return SGTC_DEPLOY( 2, "models/v_spas.mdl", "models/p_spas.mdl", 6, "mp5" );
+#else
+	return DefaultDeploy( "models/v_spas.mdl", "models/p_spas.mdl", SHOTGUN_DRAW, "mp5" );
+#endif
 }
 
 void CShotgun::PrimaryAttack()
@@ -136,12 +142,6 @@ void CShotgun::PrimaryAttack()
 
 	m_iClip--;
 
-	int flags;
-#if CLIENT_WEAPONS
-	flags = FEV_NOTHOST;
-#else
-	flags = 0;
-#endif
 	m_pPlayer->pev->effects = (int)( m_pPlayer->pev->effects ) | EF_MUZZLEFLASH;
 
 	// player "shoot" animation
@@ -150,23 +150,15 @@ void CShotgun::PrimaryAttack()
 	Vector vecSrc = m_pPlayer->GetGunPosition();
 	Vector vecAiming = m_pPlayer->GetAutoaimVector( AUTOAIM_5DEGREES );
 
-	Vector vecDir;
+	Vector vecDir = m_pPlayer->FireBulletsPlayer( 8, vecSrc, vecAiming, VECTOR_CONE_DM_SHOTGUN,
+		2048, SGTC_BULLET_SPAS, 0, 4, m_pPlayer->pev, m_pPlayer->random_seed );
 
-#if CLIENT_DLL
-	if( bIsMultiplayer() )
-#else
-	if( g_pGameRules->IsMultiplayer() )
+	PLAYBACK_EVENT_FULL( SPAS_EVENT_FLAGS, m_pPlayer->edict(), m_usSingleFire,
+		0.0, (float *)&g_vecZero, (float *)&g_vecZero, vecDir.x, vecDir.y, 0, 0, 0, 0 );
+
+#ifndef CLIENT_WEAPONS
+	m_pPlayer->SnagInvis();
 #endif
-	{
-		vecDir = m_pPlayer->FireBulletsPlayer( 4, vecSrc, vecAiming, VECTOR_CONE_DM_SHOTGUN, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
-	}
-	else
-	{
-		// regular old, untouched spread. 
-		vecDir = m_pPlayer->FireBulletsPlayer( 6, vecSrc, vecAiming, VECTOR_CONE_10DEGREES, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
-	}
-
-	PLAYBACK_EVENT_FULL( flags, m_pPlayer->edict(), m_usSingleFire, 0.0, g_vecZero, g_vecZero, vecDir.x, vecDir.y, 0, 0, 0, 0 );
 
 	if( !m_iClip && m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
 		// HEV suit - indicate out of ammo condition
@@ -186,79 +178,12 @@ void CShotgun::PrimaryAttack()
 
 void CShotgun::SecondaryAttack( void )
 {
-	// don't fire underwater
-	if( m_pPlayer->pev->waterlevel == 3 )
-	{
-		PlayEmptySound();
-		m_flNextPrimaryAttack = GetNextAttackDelay( 0.15f );
-		return;
-	}
-
-	if( m_iClip <= 1 )
-	{
-		Reload();
-		PlayEmptySound();
-		return;
-	}
-
-	m_pPlayer->m_iWeaponVolume = LOUD_GUN_VOLUME;
-	m_pPlayer->m_iWeaponFlash = NORMAL_GUN_FLASH;
-
-	m_iClip -= 2;
-
-	int flags;
-#if CLIENT_WEAPONS
-	flags = FEV_NOTHOST;
-#else
-	flags = 0;
-#endif
-	m_pPlayer->pev->effects = (int)( m_pPlayer->pev->effects ) | EF_MUZZLEFLASH;
-
-	// player "shoot" animation
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-
-	Vector vecSrc = m_pPlayer->GetGunPosition();
-	Vector vecAiming = m_pPlayer->GetAutoaimVector( AUTOAIM_5DEGREES );
-
-	Vector vecDir;
-
-#if CLIENT_DLL
-	if( bIsMultiplayer() )
-#else
-	if( g_pGameRules->IsMultiplayer() )
-#endif
-	{
-		// tuned for deathmatch
-		vecDir = m_pPlayer->FireBulletsPlayer( 8, vecSrc, vecAiming, VECTOR_CONE_DM_DOUBLESHOTGUN, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
-	}
-	else
-	{
-		// untouched default single player
-		vecDir = m_pPlayer->FireBulletsPlayer( 12, vecSrc, vecAiming, VECTOR_CONE_10DEGREES, 2048, BULLET_PLAYER_BUCKSHOT, 0, 0, m_pPlayer->pev, m_pPlayer->random_seed );
-	}
-
-	PLAYBACK_EVENT_FULL( flags, m_pPlayer->edict(), m_usDoubleFire, 0.0f, g_vecZero, g_vecZero, vecDir.x, vecDir.y, 0, 0, 0, 0 );
-
-	if( !m_iClip && m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
-		// HEV suit - indicate out of ammo condition
-		m_pPlayer->SetSuitUpdate( "!HEV_AMO0", FALSE, 0 );
-
-	//if( m_iClip != 0 )
-		m_flPumpTime = gpGlobals->time + 0.95f;
-
-	m_flNextPrimaryAttack = GetNextAttackDelay( 1.5f );
-	m_flNextSecondaryAttack = UTIL_WeaponTimeBase() + 1.5f;
-	if( m_iClip != 0 )
-		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 6.0f;
-	else
-		m_flTimeWeaponIdle = 1.5;
-
-	m_fInSpecialReload = 0;
+	// ref CShotgun has no SecondaryAttack override (stock HL double-tap removed).
 }
 
 void CShotgun::Reload( void )
 {
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || m_iClip == SHOTGUN_MAX_CLIP )
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || m_iClip == SGTC_SPAS_MAX_CLIP )
 		return;
 
 	// don't reload until recoil is done
@@ -306,8 +231,9 @@ void CShotgun::ItemPostFrame( void )
 {
 	if( m_flPumpTime && m_flPumpTime < gpGlobals->time )
 	{
-		// play pumping sound
-		EMIT_SOUND_DYN( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/scock1.wav", 1, ATTN_NORM, 0, 95 + RANDOM_LONG( 0, 0x1f ) );
+		PLAYBACK_EVENT_FULL( SPAS_EVENT_FLAGS, m_pPlayer->edict(), m_usDoubleFire,
+			0.0, (float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
+		EMIT_SOUND_DYN( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/spaspomp.wav", 1, ATTN_NORM, 0, 95 + RANDOM_LONG( 0, 0x1f ) );
 		m_flPumpTime = 0;
 	}
 
@@ -328,7 +254,7 @@ void CShotgun::WeaponIdle( void )
 		}
 		else if( m_fInSpecialReload != 0 )
 		{
-			if( m_iClip != SHOTGUN_MAX_CLIP && m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
+			if( m_iClip != SGTC_SPAS_MAX_CLIP && m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] )
 			{
 				Reload();
 			}
@@ -337,8 +263,9 @@ void CShotgun::WeaponIdle( void )
 				// reload debounce has timed out
 				SendWeaponAnim( SHOTGUN_PUMP );
 				
-				// play cocking sound
-				EMIT_SOUND_DYN( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/scock1.wav", 1, ATTN_NORM, 0, 95 + RANDOM_LONG( 0, 0x1f ) );
+				PLAYBACK_EVENT_FULL( SPAS_EVENT_FLAGS, m_pPlayer->edict(), m_usDoubleFire,
+					0.0, (float *)&g_vecZero, (float *)&g_vecZero, 0, 0, 0, 0, 0, 0 );
+				EMIT_SOUND_DYN( ENT( m_pPlayer->pev ), CHAN_ITEM, "weapons/spaspomp.wav", 1, ATTN_NORM, 0, 95 + RANDOM_LONG( 0, 0x1f ) );
 				m_fInSpecialReload = 0;
 				m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 1.5f;
 			}
