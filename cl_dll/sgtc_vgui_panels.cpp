@@ -1838,6 +1838,7 @@ public:
 	// command values from the pack preset table for the local player.
 	void FillPackSlots( void );
 	int GetSlotValue( int iSlot ) { return ( iSlot >= 0 && iSlot < SGTC_WPSEL_SLOTS ) ? m_iSlots[iSlot] : 0; }
+	int GetSelectedPack( void ) const { return m_iSelectedPack; }
 
 private:
 	Label *m_pTitle;
@@ -2072,14 +2073,9 @@ void CSgtcPackSelPanel::SelectPack( int iPack )
 	if ( iPack < 0 || iPack >= SGTC_PACKSEL_COUNT )
 		return;
 
-	m_iSelectedPack = iPack;
-
-	for ( int i = 0; i < SGTC_PACKSEL_COUNT; i++ )
-		m_pPackButton[i]->setFgColor( i == iPack ? 0xff : 0x8c, i == iPack ? 0xff : 0x8c,
-			i == iPack ? 0xff : 0x8c, 0 );
-
-	// ref Update: the blurb file is "info/pack%d_%s.txt" with the class name
-	// (PTR_s_oneill / PTR_DAT_100b3fac tables), fallback "missing text file %s".
+	// ref Update: only packs with a non-empty preset row are selectable — the
+	// orig omits empty pack buttons entirely (RefreshPackAvailability), and
+	// rejects a pack row with no slots for this team/class.
 	int iTeam = 0;
 	int iClass = -1;
 	cl_entity_t *pLocal = gEngfuncs.GetLocalPlayer();
@@ -2088,6 +2084,19 @@ void CSgtcPackSelPanel::SelectPack( int iPack )
 		iTeam = g_PlayerExtraInfo[pLocal->index].teamnumber;
 		iClass = g_PlayerExtraInfo[pLocal->index].playerclass - 1;
 	}
+
+	int iTmp[SGTC_PACK_MAX_SLOTS];
+	if ( SgtcPack_GetSlots( iTeam, iClass, iPack + 1, iTmp ) <= 0 )
+		return;
+
+	m_iSelectedPack = iPack;
+
+	for ( int i = 0; i < SGTC_PACKSEL_COUNT; i++ )
+		m_pPackButton[i]->setFgColor( i == iPack ? 0xff : 0x8c, i == iPack ? 0xff : 0x8c,
+			i == iPack ? 0xff : 0x8c, 0 );
+
+	// ref Update: the blurb file is "info/pack%d_%s.txt" with the class name
+	// (PTR_s_oneill / PTR_DAT_100b3fac tables), fallback "missing text file %s".
 
 	const char *pszClass = "esclave";
 	if ( iTeam >= 1 && iTeam <= 2 && iClass >= 0 && iClass <= 4 )
@@ -2136,6 +2145,9 @@ void CSgtcHandler_PackOver::cursorEntered( Panel *panel )
 void CSgtcHandler_PackApply::actionPerformed( Panel *panel )
 {
 	if ( !m_pPanel || !gViewPort )
+		return;
+
+	if ( m_pPanel->GetSelectedPack() < 0 )
 		return;
 
 	m_pPanel->FillPackSlots();
